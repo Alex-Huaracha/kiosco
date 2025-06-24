@@ -1,0 +1,37 @@
+name: hgtrack
+description: "Un nuevo camino, Querer es poder"
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: '>=3.3.2 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.1
+  open_file: ^3.5.9
+  path_provider: ^2.1.4
+  provider: ^6.1.2
+  webview_flutter: ^4.8.0
+  pdf: ^3.11.3
+  printing: ^5.14.2 
+  signature: ^5.5.0
+
+
+dev_dependencies:
+  flutter_launcher_icons:  ^0.13.1
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: 'assets/icon/hgicon.png'
+  adaptive_icon_background: 'assets/icon/hgicon.png'
+
+  flutter_lints: ^2.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/icon/
+
