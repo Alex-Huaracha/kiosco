@@ -1,10 +1,6 @@
 #!/bin/bash
 # Deploy Flutter web build to remote server
 
-# Configuration
-REMOTE_USER=hageoegf   # Change to your SSH username
-REMOTE_HOST=198.54.115.235
-REMOTE_PATH=/home/hageoegf/control-tiempo.hagemsa.com/
 LOCAL_BUILD_PATH=build/web
 
 # 1. Build the Flutter web project
