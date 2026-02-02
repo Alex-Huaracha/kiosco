@@ -48,21 +48,14 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
     }
   }
 
-  /// Calcula el número de columnas según el ancho de pantalla
-  /// < 800px = 2 columnas (portrait o tablets pequeñas)
-  /// >= 800px = 3 columnas (landscape o tablets grandes)
   int _calculateCrossAxisCount(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
-    return width < 800 ? 2 : 3;
+    return width < 900 ? 2 : 3;
   }
 
-  /// Calcula el aspect ratio según el número de columnas
-  /// Layout horizontal: avatar izquierda + datos derecha
-  /// 2 columnas = cards horizontales (1.8)
-  /// 3 columnas = cards horizontales más compactas (1.6)
   double _calculateAspectRatio(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
-    return width < 800 ? 1.8 : 1.6;
+    return width < 900 ? 2.2 : 2.0;
   }
 
   @override
@@ -81,13 +74,11 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
             height: 80,
           ),
           const SizedBox(height: 16),
-          
-          // Banner "Personal de Mantenimiento"
+
           _buildBanner(),
-          
+
           const SizedBox(height: 16),
-          
-          // Grid de empleados o estados (loading/error)
+
           Expanded(
             child: _buildBody(),
           ),
@@ -96,7 +87,6 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
     );
   }
 
-  /// Banner informativo con el título y contador de empleados
   Widget _buildBanner() {
     return Container(
       width: double.infinity,
@@ -257,7 +247,7 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
   void _onEmpleadoSelected(HgEmpleadoMantenimientoDto empleado) {
     // Convertir a HgOperadorOtroDto para compatibilidad con el sistema
     final operador = empleado.toOperadorOtroDto();
-    
+
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -267,9 +257,6 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
   }
 }
 
-/// Card de empleado optimizada para tablets
-/// Diseño horizontal: Avatar izquierda + Datos derecha
-/// Sin el campo "Área" (redundante, todos son de Mantenimiento)
 class EmpleadoCard extends StatelessWidget {
   final HgEmpleadoMantenimientoDto empleado;
   final VoidCallback onTap;
@@ -298,9 +285,9 @@ class EmpleadoCard extends StatelessWidget {
             children: [
               // Avatar con iniciales a la izquierda
               EmpleadoAvatar(iniciales: empleado.iniciales),
-              
-              const SizedBox(width: 16),
-              
+
+              const SizedBox(width: 12),
+
               // Información del empleado a la derecha
               Expanded(
                 child: Column(
@@ -312,32 +299,32 @@ class EmpleadoCard extends StatelessWidget {
                     Text(
                       empleado.nombreCompleto,
                       style: const TextStyle(
-                        fontSize: 18,
+                        fontSize: 16,
                         fontWeight: FontWeight.bold,
                         color: AppColors.textPrimary,
                       ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    
-                    const SizedBox(height: 6),
-                    
+
+                    const SizedBox(height: 4),
+
                     // DNI
                     Text(
                       'DNI: ${empleado.numerodocumento ?? "N/A"}',
                       style: const TextStyle(
-                        fontSize: 15,
+                        fontSize: 14,
                         color: AppColors.textSecondary,
                       ),
                     ),
-                    
-                    const SizedBox(height: 4),
-                    
+
+                    const SizedBox(height: 2),
+
                     // Cargo
                     Text(
                       empleado.cargo ?? "N/A",
                       style: const TextStyle(
-                        fontSize: 15,
+                        fontSize: 14,
                         fontWeight: FontWeight.w500,
                         color: AppColors.textSecondary,
                       ),
@@ -355,9 +342,6 @@ class EmpleadoCard extends StatelessWidget {
   }
 }
 
-/// Avatar circular con iniciales del empleado
-/// Optimizado para tablets con tamaño aumentado (70x70)
-/// Color azul industrial para mejor visibilidad exterior
 class EmpleadoAvatar extends StatelessWidget {
   final String iniciales;
 
