@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hgtrack/appseguimiento/model/hgempleadomantenimiento_model.dart';
 import 'package:hgtrack/appseguimiento/service/tracking_service_empleado_mantenimiento.dart';
-import 'package:hgtrack/appseguimiento/views/menu_form_view.dart';
+import 'package:hgtrack/appseguimiento/views/ordenes_trabajo_empleado_page.dart';
 import 'package:hgtrack/utils/app_colors.dart';
 
 class EmpleadosListPage extends StatefulWidget {
@@ -62,23 +62,21 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        leading: Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: Image.asset(
+            'assets/icon/logo.png',
+            height: 40,
+          ),
+        ),
         title: const Text('Control Tiempo OT'),
         centerTitle: true,
       ),
       body: Column(
         children: [
-          // Logo
           const SizedBox(height: 16),
-          const Image(
-            image: AssetImage('assets/icon/logo.png'),
-            height: 80,
-          ),
-          const SizedBox(height: 16),
-
           _buildBanner(),
-
           const SizedBox(height: 16),
-
           Expanded(
             child: _buildBody(),
           ),
@@ -245,13 +243,10 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
   }
 
   void _onEmpleadoSelected(HgEmpleadoMantenimientoDto empleado) {
-    // Convertir a HgOperadorOtroDto para compatibilidad con el sistema
-    final operador = empleado.toOperadorOtroDto();
-
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => MenuForm(itemTrack: operador),
+        builder: (_) => OrdenesTrabajoEmpleadoPage(empleado: empleado),
       ),
     );
   }
