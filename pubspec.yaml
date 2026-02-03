@@ -17,6 +17,7 @@ dependencies:
   pdf: ^3.11.3
   printing: ^5.14.2 
   signature: ^5.5.0
+  shared_preferences: ^2.2.2
 
 
 dev_dependencies:
