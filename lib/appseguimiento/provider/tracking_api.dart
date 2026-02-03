@@ -407,4 +407,69 @@ class TrackingApi {
     }
     return null;
   }
+
+  /// Finaliza una actividad de empleado enviando tiempos y observaciones al backend
+  /// Retorna el DTO actualizado en caso de éxito, null en caso de error
+  Future<HgDetalleOrdenTrabajoDto?> finalizarActividadEmpleado({
+    required int idDetalleOrdenTrabajo,
+    required String idEmpleadoExt,
+    required String cargoEmpleado,
+    required String nombreEmpleado,
+    required DateTime tiempoInicio,
+    required DateTime tiempoFin,
+    required int minutosEmpleado,
+    String? observaciones,
+  }) async {
+    var client = http.Client();
+    var url = '$_hgapiEndpoint/updatedetalleordentrabajo';
+    var uri = Uri.parse(url);
+
+    // Formatear fechas según documentación: yyyy-MM-dd HH:mm:ss.SSS
+    String formatFecha(DateTime fecha) {
+      final year = fecha.year.toString().padLeft(4, '0');
+      final month = fecha.month.toString().padLeft(2, '0');
+      final day = fecha.day.toString().padLeft(2, '0');
+      final hour = fecha.hour.toString().padLeft(2, '0');
+      final minute = fecha.minute.toString().padLeft(2, '0');
+      final second = fecha.second.toString().padLeft(2, '0');
+      final millisecond = fecha.millisecond.toString().padLeft(3, '0');
+      return '$year-$month-$day $hour:$minute:$second.$millisecond';
+    }
+
+    String jsonBody = jsonEncode({
+      "iddetalleordentrabajo": idDetalleOrdenTrabajo.toString(),
+      "idempleadoext": idEmpleadoExt,
+      "ccargoemp": cargoEmpleado,
+      "cnombreemp": nombreEmpleado,
+      "dtiempoinicio": formatFecha(tiempoInicio),
+      "dtiempofin": formatFecha(tiempoFin),
+      "nminutosemp": minutosEmpleado.toString(),
+      "cobservaciones": observaciones ?? "",
+      "bcerrada": "1",
+    });
+
+    try {
+      var response = await client.post(
+        uri,
+        headers: {"Content-Type": "application/json"},
+        body: jsonBody,
+      );
+
+      if (response.statusCode == 200) {
+        print("Actividad finalizada exitosamente");
+
+        // Parsear respuesta a DTO
+        final jsonResponse =
+            jsonDecode(const Utf8Decoder().convert(response.bodyBytes));
+        return HgDetalleOrdenTrabajoDto.fromJson(jsonResponse);
+      } else {
+        print("Error al finalizar actividad: Código ${response.statusCode}");
+        print("Mensaje: ${response.body}");
+        return null;
+      }
+    } catch (e) {
+      print("Excepción al finalizar actividad: $e");
+      return null;
+    }
+  }
 }

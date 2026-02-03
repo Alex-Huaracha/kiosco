@@ -1,5 +1,6 @@
 import 'package:hgtrack/appseguimiento/model/actividad_empleado_model.dart';
 import 'package:hgtrack/appseguimiento/model/hgdetalleordentrabajodto_model.dart';
+import 'package:hgtrack/appseguimiento/model/hgempleadomantenimiento_model.dart';
 import 'package:hgtrack/appseguimiento/provider/tracking_api.dart';
 
 class TrackingServiceActividadesEmpleado {
@@ -114,6 +115,56 @@ class TrackingServiceActividadesEmpleado {
         return 4; // Menor prioridad
       default:
         return 5;
+    }
+  }
+
+  /// Finaliza una actividad enviando datos de tiempo al backend
+  ///
+  /// [actividad] - Actividad a finalizar
+  /// [empleado] - Empleado que ejecutó la actividad
+  /// [tiempoInicio] - Fecha/hora del primer inicio
+  /// [tiempoFin] - Fecha/hora de finalización
+  /// [minutosEmpleado] - Total de minutos trabajados (calculado en frontend)
+  /// [observaciones] - Observaciones opcionales del técnico
+  ///
+  /// Retorna el DTO actualizado en caso de éxito, null en caso de error
+  Future<HgDetalleOrdenTrabajoDto?> finalizarActividad({
+    required HgDetalleOrdenTrabajoDto actividad,
+    required HgEmpleadoMantenimientoDto empleado,
+    required DateTime tiempoInicio,
+    required DateTime tiempoFin,
+    required int minutosEmpleado,
+    String? observaciones,
+  }) async {
+    try {
+      final api = TrackingApi();
+
+      // Construir nombre completo: APELLIDOS, NOMBRES
+      final apellidoPaterno = empleado.apellidopaterno ?? '';
+      final apellidoMaterno = empleado.apellidomaterno ?? '';
+      final nombres = empleado.nombres ?? '';
+
+      String nombreCompleto;
+      if (apellidoPaterno.isNotEmpty || apellidoMaterno.isNotEmpty) {
+        final apellidos = '$apellidoPaterno $apellidoMaterno'.trim();
+        nombreCompleto = '$apellidos, $nombres'.toUpperCase().trim();
+      } else {
+        nombreCompleto = nombres.toUpperCase().trim();
+      }
+
+      return await api.finalizarActividadEmpleado(
+        idDetalleOrdenTrabajo: actividad.id!,
+        idEmpleadoExt: empleado.id.toString(),
+        cargoEmpleado: empleado.cargo ?? 'TECNICO',
+        nombreEmpleado: nombreCompleto,
+        tiempoInicio: tiempoInicio,
+        tiempoFin: tiempoFin,
+        minutosEmpleado: minutosEmpleado,
+        observaciones: observaciones,
+      );
+    } catch (e) {
+      print("Error en servicio de finalización: $e");
+      return null;
     }
   }
 }

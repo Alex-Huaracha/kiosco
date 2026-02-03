@@ -5,6 +5,7 @@ import 'package:hgtrack/appseguimiento/model/hgdetalleordentrabajodto_model.dart
 import 'package:hgtrack/appseguimiento/model/hgordentrabajodto_model.dart';
 import 'package:hgtrack/appseguimiento/model/actividad_tracking_state.dart';
 import 'package:hgtrack/appseguimiento/service/actividad_local_storage_service.dart';
+import 'package:hgtrack/appseguimiento/service/tracking_service_actividades_empleado.dart';
 import 'package:hgtrack/utils/app_colors.dart';
 
 /// Pantalla de detalle de actividad con control de tiempo
@@ -211,10 +212,57 @@ class _ActividadDetallePageState extends State<ActividadDetallePage> {
         observacionesFinales: _observacionesController.text.trim(),
       );
 
-      // TODO: Enviar al backend
-      // final estadoFinal = ... (para cuando se implemente el envío)
+      // Enviar al backend
+      final estadoFinalizado = _trackingState!;
+      final service = TrackingServiceActividadesEmpleado();
 
-      // Limpiar estado local
+      // Calcular datos para el request
+      final DateTime fechaInicio = estadoFinalizado.periodos.first.inicio;
+      final DateTime fechaFin = DateTime.now();
+      final int minutosTotal = estadoFinalizado.tiempoTotalTrabajado.inMinutes;
+
+      print('Enviando actividad al backend:');
+      print('  - ID: ${widget.actividad.id}');
+      print('  - Empleado: ${widget.empleado.id}');
+      print('  - Inicio: $fechaInicio');
+      print('  - Fin: $fechaFin');
+      print('  - Minutos: $minutosTotal');
+
+      // Llamar al servicio
+      final resultado = await service.finalizarActividad(
+        actividad: widget.actividad,
+        empleado: widget.empleado,
+        tiempoInicio: fechaInicio,
+        tiempoFin: fechaFin,
+        minutosEmpleado: minutosTotal,
+        observaciones: _observacionesController.text.trim(),
+      );
+
+      if (resultado == null) {
+        // Error al enviar al backend
+        setState(() => _isSaving = false);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text(
+                'Error al enviar al servidor. Los datos se guardaron localmente. '
+                'Reintenta más tarde.',
+              ),
+              backgroundColor: AppColors.warning,
+              duration: const Duration(seconds: 6),
+              action: SnackBarAction(
+                label: 'Reintentar',
+                textColor: Colors.white,
+                onPressed: _onFinalizar,
+              ),
+            ),
+          );
+        }
+        return; // No limpiar el storage local (para retry)
+      }
+
+      // Éxito: limpiar estado local
       await _storageService.clearState(widget.actividad.id!);
 
       if (mounted) {
