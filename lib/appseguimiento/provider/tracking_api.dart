@@ -5,6 +5,7 @@ import 'package:hgtrack/appseguimiento/model/hgdetalleordentrabajodto_model.dart
 import 'package:hgtrack/appseguimiento/model/hgoperadorotrodto_model.dart';
 import 'package:hgtrack/appseguimiento/model/hgresponseordentrabajodto_model.dart';
 import 'package:hgtrack/appseguimiento/model/hgempleadomantenimiento_model.dart';
+import 'package:hgtrack/appseguimiento/model/actividad_empleado_model.dart';
 import 'package:http/http.dart' as http;
 import 'package:hgtrack/appseguimiento/model/hgoperadordto_model.dart';
 
@@ -15,7 +16,8 @@ class TrackingApi {
 
   Future<List<HgOperadorDto>?> getAllTrackingOperador(String dni) async {
     var client = http.Client();
-    var url = 'http://hagemsa.com/servicios/fuenteextranet.php?p=manifiestoresumen';
+    var url =
+        'http://hagemsa.com/servicios/fuenteextranet.php?p=manifiestoresumen';
 
     var uri = Uri.parse(url);
 
@@ -70,7 +72,7 @@ class TrackingApi {
           //"Content-Type": "application/json",
         },
         body: jsonBody,
-      );      
+      );
       if (response.statusCode == 200) {
         //print("Respuesta: ${response.body}");
         if (response.body == "[]") {
@@ -120,7 +122,7 @@ class TrackingApi {
           //"Content-Type": "application/json",
         },
         body: jsonBody,
-      );      
+      );
       if (response.statusCode == 200) {
         //print("Respuesta: ${response.body}");
         if (response.body == "[]") {
@@ -323,9 +325,11 @@ class TrackingApi {
     return null;
   }
 
-  Future<List<HgEmpleadoMantenimientoDto>?> getAllEmpleadosMantenimiento() async {
+  Future<List<HgEmpleadoMantenimientoDto>?>
+      getAllEmpleadosMantenimiento() async {
     var client = http.Client();
-    var url = 'http://extranetservicio.hagemsa.org/api/empleado/empleadoMantenimiento';
+    var url =
+        'http://extranetservicio.hagemsa.org/api/empleado/empleadoMantenimiento';
     var uri = Uri.parse(url);
 
     String jsonBody = jsonEncode({});
@@ -346,18 +350,54 @@ class TrackingApi {
         } else {
           var empleados = hgEmpleadoMantenimientoDtoFromJson(
               const Utf8Decoder().convert(response.bodyBytes));
-          
+
           // Filtrar solo empleados activos
           var empleadosActivos = empleados.where((e) => e.activo == 1).toList();
-          
+
           // Ordenar alfabéticamente por apellido paterno
           empleadosActivos.sort((a, b) {
             String apellidoA = a.apellidopaterno ?? '';
             String apellidoB = b.apellidopaterno ?? '';
             return apellidoA.compareTo(apellidoB);
           });
-          
+
           return empleadosActivos;
+        }
+      } else {
+        print("Error en la solicitud: Código ${response.statusCode}");
+      }
+    } catch (e) {
+      print("Excepción atrapada: $e");
+    }
+    return null;
+  }
+
+  Future<List<ActividadEmpleadoDto>?> getAllActividadesEmpleado(
+    String idEmpleado,
+  ) async {
+    var client = http.Client();
+    var url = '$_hgapiEndpoint/consultaractividadesempleado';
+    var uri = Uri.parse(url);
+
+    String jsonBody = jsonEncode({
+      "idempleadoext": idEmpleado,
+    });
+
+    try {
+      var response = await client.post(
+        uri,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: jsonBody,
+      );
+
+      if (response.statusCode == 200) {
+        if (response.body == "[]" || response.body.isEmpty) {
+          return null;
+        } else {
+          return actividadEmpleadoDtoListFromJson(
+              const Utf8Decoder().convert(response.bodyBytes));
         }
       } else {
         print("Error en la solicitud: Código ${response.statusCode}");

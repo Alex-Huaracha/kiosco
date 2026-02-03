@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hgtrack/appseguimiento/model/hgempleadomantenimiento_model.dart';
 import 'package:hgtrack/appseguimiento/service/tracking_service_empleado_mantenimiento.dart';
-import 'package:hgtrack/appseguimiento/views/ordenes_trabajo_empleado_page.dart';
+import 'package:hgtrack/appseguimiento/views/actividades_pendientes_empleado_page.dart';
 import 'package:hgtrack/utils/app_colors.dart';
 
 class EmpleadosListPage extends StatefulWidget {
@@ -246,7 +246,7 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => OrdenesTrabajoEmpleadoPage(empleado: empleado),
+        builder: (_) => ActividadesPendientesEmpleadoPage(empleado: empleado),
       ),
     );
   }
