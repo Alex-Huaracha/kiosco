@@ -6,8 +6,10 @@ import 'package:hgtrack/core/theme/app_colors.dart';
 import 'package:hgtrack/features/authentication/data/models/empleado.dart';
 import 'package:hgtrack/features/time_tracking/data/models/detalle_orden_trabajo.dart';
 import 'package:hgtrack/features/time_tracking/data/models/orden_trabajo.dart';
+import 'package:hgtrack/features/time_tracking/data/models/pending_sync_activity.dart';
 import 'package:hgtrack/features/time_tracking/data/services/activity_service.dart';
 import 'package:hgtrack/features/time_tracking/data/services/local_storage_service.dart';
+import 'package:hgtrack/features/time_tracking/data/services/pending_sync_service.dart';
 import 'package:hgtrack/features/time_tracking/domain/tracking_state.dart';
 import 'package:hgtrack/features/time_tracking/presentation/widgets/activity_info_card.dart';
 import 'package:hgtrack/features/time_tracking/presentation/widgets/current_state_card.dart';
@@ -69,12 +71,28 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
         _isLoading = false;
       });
 
-      // No hay timer automático según tus especificaciones
+      // Iniciar timer si está en proceso (para actualizar UI cada segundo)
+      _startTimerIfNeeded();
     } catch (e) {
       print('Error al cargar estado: $e');
       setState(() {
         _trackingState = ActividadTrackingState.inicial(widget.actividad.id!);
         _isLoading = false;
+      });
+    }
+  }
+
+  /// Inicia un timer de actualización si la actividad está en proceso
+  void _startTimerIfNeeded() {
+    _refreshTimer?.cancel();
+    
+    if (_trackingState?.estado == EstadoActividad.enProceso) {
+      _refreshTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (_trackingState?.estado == EstadoActividad.enProceso) {
+          setState(() {}); // Actualizar UI para reflejar tiempo transcurrido
+        } else {
+          timer.cancel();
+        }
       });
     }
   }
@@ -107,6 +125,7 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
         _trackingState = _trackingState!.iniciar();
       });
       await _saveState();
+      _startTimerIfNeeded(); // Iniciar timer para actualizar UI
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -138,6 +157,7 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
         _trackingState = _trackingState!.pausar();
       });
       await _saveState();
+      _refreshTimer?.cancel(); // Detener timer al pausar
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -169,6 +189,7 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
         _trackingState = _trackingState!.reanudar();
       });
       await _saveState();
+      _startTimerIfNeeded(); // Reiniciar timer al reanudar
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -191,16 +212,60 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
     }
   }
 
+  /// Acción: Cancelar actividad (antes de 5 minutos)
+  Future<void> _onCancelar() async {
+    if (_trackingState == null) return;
+
+    final confirmar = await _mostrarDialogConfirmacion(
+      titulo: '¿Cancelar actividad?',
+      mensaje:
+          'Se descartará todo el progreso registrado y la actividad volverá a estado inicial.',
+      textoConfirmar: 'Sí, Cancelar',
+    );
+
+    if (confirmar != true) return;
+
+    try {
+      setState(() {
+        _trackingState = _trackingState!.cancelar();
+      });
+      await _saveState();
+      _refreshTimer?.cancel(); // Detener timer al cancelar
+
+      // Limpiar observaciones
+      _observacionesController.clear();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Actividad cancelada. Progreso descartado.'),
+            backgroundColor: AppColors.warning,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al cancelar: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
   /// Acción: Finalizar actividad
   Future<void> _onFinalizar() async {
     if (_trackingState == null) return;
 
-    // Validar tiempo mínimo
+    // Validar tiempo mínimo de 5 minutos
     final tiempoTotal = _trackingState!.tiempoTotalTrabajado;
-    if (tiempoTotal.inSeconds < 60) {
+    if (tiempoTotal.inMinutes < 5) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Debe trabajar al menos 1 minuto antes de finalizar'),
+          content: Text('Debe trabajar al menos 5 minutos antes de finalizar'),
           backgroundColor: AppColors.error,
         ),
       );
@@ -246,27 +311,43 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
       );
 
       if (resultado == null) {
-        // Error al enviar al backend
+        // Error al enviar al backend - Guardar en cola de pendientes
+        final pendingActivity = PendingSyncActivity(
+          idActividad: widget.actividad.id!,
+          idEmpleado: widget.empleado.id!,
+          nombreActividad: widget.actividad.cactividad ?? 'Sin nombre',
+          nombreEmpleado: widget.empleado.nombreCompleto,
+          cargoEmpleado: widget.empleado.cargo ?? 'Sin cargo',
+          fechaInicio: fechaInicio,
+          fechaFin: fechaFin,
+          minutosTotal: minutosTotal,
+          observaciones: _observacionesController.text.trim(),
+          createdAt: DateTime.now(),
+        );
+
+        final syncService = PendingSyncService();
+        await syncService.addToPendingQueue(pendingActivity);
+
+        // Limpiar el tracking state local (ya está finalizado)
+        await _storageService.clearState(widget.actividad.id!);
+
         setState(() => _isSaving = false);
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text(
-                'Error al enviar al servidor. Los datos se guardaron localmente. '
-                'Reintenta más tarde.',
+            const SnackBar(
+              content: Text(
+                '✓ Actividad finalizada. Se sincronizará cuando haya conexión.',
               ),
-              backgroundColor: AppColors.warning,
-              duration: const Duration(seconds: 6),
-              action: SnackBarAction(
-                label: 'Reintentar',
-                textColor: Colors.white,
-                onPressed: _onFinalizar,
-              ),
+              backgroundColor: AppColors.success,
+              duration: Duration(seconds: 4),
             ),
           );
+
+          // Volver a la lista (actividad finalizada localmente)
+          Navigator.pop(context, true);
         }
-        return; // No limpiar el storage local (para retry)
+        return;
       }
 
       // Éxito: limpiar estado local
@@ -551,6 +632,10 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
 
   /// Botones de acción según el estado
   Widget _buildBotonesAccion(EstadoActividad estado) {
+    // Calcular si tiene más de 5 minutos trabajados
+    final tiempoTotal = _trackingState?.tiempoTotalTrabajado ?? Duration.zero;
+    final tieneMasDe5Minutos = tiempoTotal.inMinutes >= 5;
+
     switch (estado) {
       case EstadoActividad.noIniciada:
         return SizedBox(
@@ -574,30 +659,45 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
       case EstadoActividad.enProceso:
         return Row(
           children: [
+            // Botón Pausar (solo habilitado después de 5 minutos)
             Expanded(
               child: ElevatedButton.icon(
-                onPressed: _onPausar,
+                onPressed: tieneMasDe5Minutos ? _onPausar : null,
                 icon: const Icon(Icons.pause),
                 label: const Text('Pausar'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.warning,
                   foregroundColor: Colors.white,
+                  disabledBackgroundColor: AppColors.textSecondary.withAlpha(128),
+                  disabledForegroundColor: Colors.white.withAlpha(179),
                   padding: const EdgeInsets.symmetric(vertical: 16),
                 ),
               ),
             ),
             const SizedBox(width: 12),
+            // Botón Cancelar (< 5 min) o Finalizar (>= 5 min)
             Expanded(
-              child: ElevatedButton.icon(
-                onPressed: _onFinalizar,
-                icon: const Icon(Icons.stop),
-                label: const Text('Finalizar'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.error,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
-              ),
+              child: tieneMasDe5Minutos
+                  ? ElevatedButton.icon(
+                      onPressed: _onFinalizar,
+                      icon: const Icon(Icons.stop),
+                      label: const Text('Finalizar'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.error,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      ),
+                    )
+                  : ElevatedButton.icon(
+                      onPressed: _onCancelar,
+                      icon: const Icon(Icons.close),
+                      label: const Text('Cancelar'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.textSecondary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      ),
+                    ),
             ),
           ],
         );
@@ -618,6 +718,8 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
               ),
             ),
             const SizedBox(width: 12),
+            // En estado pausado siempre mostrar Finalizar
+            // (solo se puede pausar después de 5 min, por lo tanto siempre se puede finalizar)
             Expanded(
               child: ElevatedButton.icon(
                 onPressed: _onFinalizar,
