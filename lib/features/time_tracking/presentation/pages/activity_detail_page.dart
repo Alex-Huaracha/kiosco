@@ -9,6 +9,11 @@ import 'package:hgtrack/features/time_tracking/data/models/orden_trabajo.dart';
 import 'package:hgtrack/features/time_tracking/data/services/activity_service.dart';
 import 'package:hgtrack/features/time_tracking/data/services/local_storage_service.dart';
 import 'package:hgtrack/features/time_tracking/domain/tracking_state.dart';
+import 'package:hgtrack/features/time_tracking/presentation/widgets/activity_info_card.dart';
+import 'package:hgtrack/features/time_tracking/presentation/widgets/current_state_card.dart';
+import 'package:hgtrack/features/time_tracking/presentation/widgets/observations_field.dart';
+import 'package:hgtrack/features/time_tracking/presentation/widgets/order_info_card.dart';
+import 'package:hgtrack/features/time_tracking/presentation/widgets/timeline_widget.dart';
 
 /// Pantalla de detalle de actividad con control de tiempo
 /// Permite iniciar, pausar, reanudar y finalizar actividades
@@ -393,15 +398,19 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
           padding: const EdgeInsets.all(16),
           children: [
             // 1. Info de la OT
-            _buildInfoOtCard(),
+            OrderInfoCard(ordenTrabajo: widget.ordentrabajo),
             const SizedBox(height: 16),
 
             // 2. Info de la Actividad
-            _buildInfoActividadCard(),
+            ActivityInfoCard(
+              actividad: widget.actividad,
+              empleado: widget.empleado,
+            ),
             const SizedBox(height: 16),
 
             // 3. Estado Actual
-            _buildEstadoActualCard(),
+            if (_trackingState != null)
+              CurrentStateCard(estado: _trackingState!.estado),
             const SizedBox(height: 16),
 
             // 4. Acciones
@@ -409,11 +418,18 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
             const SizedBox(height: 16),
 
             // 5. Observaciones
-            _buildObservacionesField(),
+            ObservationsField(
+              controller: _observacionesController,
+              onChanged: _onObservacionesChanged,
+            ),
             const SizedBox(height: 16),
 
             // 6. Historial
-            _buildHistorialTimeline(),
+            if (_trackingState != null)
+              TimelineWidget(
+                periodos: _trackingState!.periodos,
+                tiempoTotalTrabajado: _trackingState!.tiempoTotalTrabajado,
+              ),
 
             const SizedBox(height: 80),
           ],
@@ -439,15 +455,21 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
                   child: Column(
                     children: [
                       // 1. Info de la OT
-                      _buildInfoOtCard(),
+                      OrderInfoCard(ordenTrabajo: widget.ordentrabajo),
                       const SizedBox(height: 16),
 
                       // 2. Info de la Actividad
-                      _buildInfoActividadCard(),
+                      ActivityInfoCard(
+                        actividad: widget.actividad,
+                        empleado: widget.empleado,
+                      ),
                       const SizedBox(height: 16),
 
                       // 5. Observaciones
-                      _buildObservacionesField(),
+                      ObservationsField(
+                        controller: _observacionesController,
+                        onChanged: _onObservacionesChanged,
+                      ),
                     ],
                   ),
                 ),
@@ -460,7 +482,8 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
                   child: Column(
                     children: [
                       // 3. Estado Actual
-                      _buildEstadoActualCard(),
+                      if (_trackingState != null)
+                        CurrentStateCard(estado: _trackingState!.estado),
                       const SizedBox(height: 16),
 
                       // 4. Acciones
@@ -468,7 +491,11 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
                       const SizedBox(height: 16),
 
                       // 6. Historial
-                      _buildHistorialTimeline(),
+                      if (_trackingState != null)
+                        TimelineWidget(
+                          periodos: _trackingState!.periodos,
+                          tiempoTotalTrabajado: _trackingState!.tiempoTotalTrabajado,
+                        ),
                     ],
                   ),
                 ),
@@ -481,223 +508,11 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
     );
   }
 
-  /// Card con información de la OT
-  Widget _buildInfoOtCard() {
-    final ot = widget.ordentrabajo;
 
-    return Card(
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header con placa y OT
-            Row(
-              children: [
-                const Icon(
-                  Icons.local_shipping,
-                  size: 20,
-                  color: AppColors.primary,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    '${ot.idplacatracto ?? "N/A"} • OT-${ot.id}',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ),
-              ],
-            ),
 
-            const SizedBox(height: 12),
-            const Divider(color: AppColors.divider, thickness: 1),
-            const SizedBox(height: 12),
 
-            // Detalles de la OT
-            _buildInfoRow(
-              Icons.calendar_today,
-              'Fecha',
-              _formatearFecha(ot.dfecha),
-            ),
-            const SizedBox(height: 8),
-            _buildInfoRow(
-              Icons.person,
-              'Supervisor',
-              ot.supervisor ?? 'N/A',
-            ),
-            const SizedBox(height: 8),
-            _buildInfoRow(
-              Icons.warehouse,
-              'Taller',
-              ot.taller ?? 'N/A',
-            ),
-            const SizedBox(height: 8),
-            _buildInfoRow(
-              Icons.speed,
-              'Kilometraje',
-              ot.nkilometraje != null ? '${ot.nkilometraje} km' : 'N/A',
-            ),
-            const SizedBox(height: 8),
-            _buildInfoRow(
-              Icons.business,
-              'Centro Costo',
-              ot.ccentrocosto ?? 'N/A',
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
-  /// Card con información de la actividad
-  Widget _buildInfoActividadCard() {
-    final act = widget.actividad;
-    final emp = widget.empleado;
 
-    return Card(
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header
-            const Row(
-              children: [
-                Icon(
-                  Icons.assignment,
-                  size: 20,
-                  color: AppColors.primary,
-                ),
-                SizedBox(width: 8),
-                Text(
-                  'Detalles de la Actividad',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.primary,
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 12),
-            const Divider(color: AppColors.divider, thickness: 1),
-            const SizedBox(height: 12),
-
-            // Detalles
-            if (act.csistema != null || act.csubsistema != null) ...[
-              _buildInfoRow(
-                Icons.category,
-                'Sistema',
-                [
-                  if (act.csistema != null) act.csistema!,
-                  if (act.csubsistema != null) act.csubsistema!,
-                ].join(' • '),
-              ),
-              const SizedBox(height: 8),
-            ],
-
-            _buildInfoRow(
-              Icons.person,
-              'Asignado a',
-              emp.nombreCompleto,
-            ),
-            const SizedBox(height: 8),
-            _buildInfoRow(
-              Icons.badge,
-              'Cargo',
-              emp.cargo ?? 'N/A',
-            ),
-            const SizedBox(height: 8),
-            _buildInfoRow(
-              Icons.calendar_month,
-              'Registrado',
-              _formatearFecha(act.dfecreg),
-            ),
-
-            // Badge Falla Reportada
-            if (act.bfallareportada == true) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: AppColors.error,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.warning, size: 16, color: Colors.white),
-                    SizedBox(width: 6),
-                    Text(
-                      'Falla Reportada',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Card con estado actual (solo badge)
-  Widget _buildEstadoActualCard() {
-    if (_trackingState == null) {
-      return const SizedBox.shrink();
-    }
-
-    final estado = _trackingState!.estado;
-
-    return Card(
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header
-            const Text(
-              'Estado Actual',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-                color: AppColors.textPrimary,
-              ),
-            ),
-
-            const SizedBox(height: 12),
-
-            // Badge de estado en contenedor gris
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              decoration: BoxDecoration(
-                color: AppColors.background,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Center(
-                child: _buildEstadoBadge(estado),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   /// Card con acciones (botones)
   Widget _buildAccionesCard() {
@@ -832,377 +647,13 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
     }
   }
 
-  /// Badge de estado visual
-  Widget _buildEstadoBadge(EstadoActividad estado) {
-    Color color;
-    String texto;
-    IconData icono;
 
-    switch (estado) {
-      case EstadoActividad.noIniciada:
-        color = AppColors.textSecondary;
-        texto = 'No Iniciada';
-        icono = Icons.radio_button_unchecked;
-        break;
-      case EstadoActividad.enProceso:
-        color = AppColors.success;
-        texto = 'En Proceso';
-        icono = Icons.play_circle;
-        break;
-      case EstadoActividad.pausada:
-        color = AppColors.warning;
-        texto = 'En Pausa';
-        icono = Icons.pause_circle;
-        break;
-      case EstadoActividad.finalizada:
-        color = AppColors.primary;
-        texto = 'Finalizada';
-        icono = Icons.check_circle;
-        break;
-    }
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icono, color: Colors.white, size: 24),
-          const SizedBox(width: 8),
-          Text(
-            texto,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
-  /// Campo de observaciones
-  Widget _buildObservacionesField() {
-    return Card(
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Row(
-              children: [
-                Icon(
-                  Icons.edit_note,
-                  size: 20,
-                  color: AppColors.primary,
-                ),
-                SizedBox(width: 8),
-                Text(
-                  'Observaciones',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.primary,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _observacionesController,
-              onChanged: _onObservacionesChanged,
-              maxLines: 5,
-              decoration: const InputDecoration(
-                hintText:
-                    'Ej: Se encontró desgaste en la soldadura del marco...',
-                border: OutlineInputBorder(),
-                enabledBorder: OutlineInputBorder(
-                  borderSide: BorderSide(color: AppColors.divider),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderSide: BorderSide(color: AppColors.primary, width: 2),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
-  /// Timeline de historial (continuará en siguiente mensaje)
-  Widget _buildHistorialTimeline() {
-    if (_trackingState == null || _trackingState!.periodos.isEmpty) {
-      return Card(
-        elevation: 2,
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            children: [
-              const Icon(
-                Icons.history,
-                size: 64,
-                color: AppColors.textSecondary,
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Sin actividad registrada',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Inicie la actividad para ver el historial',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: AppColors.textSecondary.withAlpha(179),
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      );
-    }
 
-    final periodos = _trackingState!.periodos;
 
-    return Card(
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Row(
-              children: [
-                Icon(
-                  Icons.history,
-                  size: 20,
-                  color: AppColors.primary,
-                ),
-                SizedBox(width: 8),
-                Text(
-                  'Historial de Ejecución',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.primary,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
 
-            // Timeline
-            ...periodos.asMap().entries.map((entry) {
-              final index = entry.key;
-              final periodo = entry.value;
-              final isLast = index == periodos.length - 1;
-
-              return _buildTimelineItem(periodo, isLast);
-            }),
-
-            const SizedBox(height: 16),
-            const Divider(color: AppColors.divider, thickness: 2),
-            const SizedBox(height: 12),
-
-            // Resumen total
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Tiempo total trabajado:',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                Text(
-                  _formatearDuracion(_trackingState!.tiempoTotalTrabajado),
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.primary,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTimelineItem(PeriodoTrabajo periodo, bool isLast) {
-    Color color;
-    IconData icono;
-    String titulo;
-
-    switch (periodo.tipo) {
-      case TipoEvento.inicio:
-        color = AppColors.success;
-        icono = Icons.play_circle;
-        titulo = 'Iniciado';
-        break;
-      case TipoEvento.pausa:
-        color = AppColors.warning;
-        icono = Icons.pause_circle;
-        titulo = 'Pausado';
-        break;
-      case TipoEvento.reanudacion:
-        color = AppColors.success;
-        icono = Icons.play_circle;
-        titulo = 'Reanudado';
-        break;
-      case TipoEvento.finalizacion:
-        color = AppColors.error;
-        icono = Icons.stop_circle;
-        titulo = 'Finalizado';
-        break;
-    }
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Icono timeline
-          Column(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: color,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(icono, color: Colors.white, size: 24),
-              ),
-              if (!isLast)
-                Container(
-                  width: 2,
-                  height: 40,
-                  color: AppColors.divider,
-                ),
-            ],
-          ),
-
-          const SizedBox(width: 16),
-
-          // Contenido
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  titulo,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  _formatearHora(periodo.inicio),
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-                if (periodo.duracion != null) ...[
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.timer,
-                        size: 14,
-                        color: AppColors.textSecondary,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Trabajado: ${_formatearDuracion(periodo.duracion!)}',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                          color: AppColors.primary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Helpers de formateo
-  Widget _buildInfoRow(IconData icono, String label, String value) {
-    return Row(
-      children: [
-        Icon(icono, size: 16, color: AppColors.textSecondary),
-        const SizedBox(width: 8),
-        Text(
-          '$label: ',
-          style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: AppColors.textSecondary,
-          ),
-        ),
-        Expanded(
-          child: Text(
-            value,
-            style: const TextStyle(
-              fontSize: 14,
-              color: AppColors.textPrimary,
-            ),
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
-    );
-  }
-
-  String _formatearFecha(int? millis) {
-    if (millis == null) return 'N/A';
-    final fecha = DateTime.fromMillisecondsSinceEpoch(millis);
-    String dosDigitos(int n) => n.toString().padLeft(2, '0');
-    return '${dosDigitos(fecha.day)}/${dosDigitos(fecha.month)}/${fecha.year}';
-  }
-
-  String _formatearHora(DateTime fecha) {
-    final hora = fecha.hour;
-    final minuto = fecha.minute.toString().padLeft(2, '0');
-    final segundo = fecha.second.toString().padLeft(2, '0');
-    final periodo = hora >= 12 ? 'PM' : 'AM';
-    final hora12 = hora > 12 ? hora - 12 : (hora == 0 ? 12 : hora);
-    return '${hora12.toString().padLeft(2, '0')}:$minuto:$segundo $periodo';
-  }
-
-  String _formatearDuracion(Duration duracion) {
-    final horas = duracion.inHours;
-    final minutos = duracion.inMinutes.remainder(60);
-
-    if (horas > 0) {
-      return '${horas}h ${minutos}min';
-    } else {
-      return '${minutos}min';
-    }
-  }
 
   /// Dialogs
   Future<bool?> _mostrarDialogConfirmacion({
@@ -1297,6 +748,18 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
         ],
       ),
     );
+  }
+
+  /// Helper para formatear duración (usado en diálogos)
+  String _formatearDuracion(Duration duracion) {
+    final horas = duracion.inHours;
+    final minutos = duracion.inMinutes.remainder(60);
+
+    if (horas > 0) {
+      return '${horas}h ${minutos}min';
+    } else {
+      return '${minutos}min';
+    }
   }
 
   Future<bool> _onWillPop() async {
