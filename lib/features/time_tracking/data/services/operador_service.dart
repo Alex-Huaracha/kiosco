@@ -1,9 +1,9 @@
-import 'package:hgtrack/appseguimiento/model/hgoperadordto_model.dart';
-import 'package:hgtrack/appseguimiento/model/hgoperadorotrodto_model.dart';
-import 'package:hgtrack/appseguimiento/provider/tracking_api.dart';
+import 'package:hgtrack/core/network/api_client.dart';
+import 'package:hgtrack/features/time_tracking/data/models/operador.dart';
+import 'package:hgtrack/features/time_tracking/data/models/operador_otro.dart';
 
-class TrackingServiceOperador {
-  TrackingServiceOperador({
+class OperadorService {
+  OperadorService({
     required this.dni,
   });
   final _api = TrackingApi();

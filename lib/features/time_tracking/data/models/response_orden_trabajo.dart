@@ -1,6 +1,7 @@
 import 'dart:convert';
-import 'package:hgtrack/appseguimiento/model/hgdetalleordentrabajodto_model.dart';
-import 'package:hgtrack/appseguimiento/model/hgordentrabajodto_model.dart';
+
+import 'package:hgtrack/features/time_tracking/data/models/detalle_orden_trabajo.dart';
+import 'package:hgtrack/features/time_tracking/data/models/orden_trabajo.dart';
 
 List<HgResponseOrdenTrabajoDto> hgResponseOrdenTrabajoDtoListFromJson(
   String str,

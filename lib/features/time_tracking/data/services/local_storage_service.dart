@@ -1,5 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:hgtrack/appseguimiento/model/actividad_tracking_state.dart';
+
+import 'package:hgtrack/features/time_tracking/domain/tracking_state.dart';
 
 /// Servicio para persistir estados de tracking de actividades en SharedPreferences
 /// Permite guardar, cargar y limpiar estados localmente

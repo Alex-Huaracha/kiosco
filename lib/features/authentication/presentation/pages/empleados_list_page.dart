@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:hgtrack/appseguimiento/model/hgempleadomantenimiento_model.dart';
-import 'package:hgtrack/appseguimiento/service/tracking_service_empleado_mantenimiento.dart';
-import 'package:hgtrack/appseguimiento/views/actividades_pendientes_empleado_page.dart';
-import 'package:hgtrack/utils/app_colors.dart';
+
+import 'package:hgtrack/core/theme/app_colors.dart';
+import 'package:hgtrack/features/authentication/data/models/empleado.dart';
+import 'package:hgtrack/features/authentication/data/services/auth_service.dart';
+import 'package:hgtrack/features/time_tracking/presentation/pages/activities_list_page.dart';
 
 class EmpleadosListPage extends StatefulWidget {
   const EmpleadosListPage({super.key});
@@ -29,7 +30,7 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
     });
 
     try {
-      final trackingService = TrackingServiceEmpleadoMantenimiento();
+      final trackingService = AuthService();
       final result = await trackingService.getAllEmpleadosMantenimiento();
 
       setState(() {
@@ -246,7 +247,7 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => ActividadesPendientesEmpleadoPage(empleado: empleado),
+        builder: (_) => ActivitiesListPage(empleado: empleado),
       ),
     );
   }

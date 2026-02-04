@@ -1,5 +1,6 @@
 import 'dart:convert';
-import 'package:hgtrack/appseguimiento/model/hgoperadorotrodto_model.dart';
+
+import 'package:hgtrack/features/time_tracking/data/models/operador_otro.dart';
 
 // Modelo wrapper para la respuesta del servidor
 class HgEmpleadoMantenimientoResponse {

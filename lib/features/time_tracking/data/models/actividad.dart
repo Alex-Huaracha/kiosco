@@ -1,8 +1,10 @@
 import 'dart:convert';
+
 import 'package:flutter/material.dart';
-import 'package:hgtrack/appseguimiento/model/hgdetalleordentrabajodto_model.dart';
-import 'package:hgtrack/appseguimiento/model/hgordentrabajodto_model.dart';
-import 'package:hgtrack/utils/app_colors.dart';
+
+import 'package:hgtrack/core/theme/app_colors.dart';
+import 'package:hgtrack/features/time_tracking/data/models/detalle_orden_trabajo.dart';
+import 'package:hgtrack/features/time_tracking/data/models/orden_trabajo.dart';
 
 /// Parsea lista de actividades desde JSON
 List<ActividadEmpleadoDto> actividadEmpleadoDtoListFromJson(String str) {

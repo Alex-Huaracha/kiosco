@@ -1,9 +1,9 @@
-import 'package:hgtrack/appseguimiento/model/actividad_empleado_model.dart';
-import 'package:hgtrack/appseguimiento/model/hgdetalleordentrabajodto_model.dart';
-import 'package:hgtrack/appseguimiento/model/hgempleadomantenimiento_model.dart';
-import 'package:hgtrack/appseguimiento/provider/tracking_api.dart';
+import 'package:hgtrack/core/network/api_client.dart';
+import 'package:hgtrack/features/authentication/data/models/empleado.dart';
+import 'package:hgtrack/features/time_tracking/data/models/actividad.dart';
+import 'package:hgtrack/features/time_tracking/data/models/detalle_orden_trabajo.dart';
 
-class TrackingServiceActividadesEmpleado {
+class ActivityService {
   /// Obtiene las actividades del empleado y las agrupa por Orden de Trabajo
   ///
   /// [idEmpleado] - ID del empleado como String

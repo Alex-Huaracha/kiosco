@@ -1,7 +1,7 @@
-import 'package:hgtrack/appseguimiento/model/hgresponseordentrabajodto_model.dart';
-import 'package:hgtrack/appseguimiento/provider/tracking_api.dart';
+import 'package:hgtrack/core/network/api_client.dart';
+import 'package:hgtrack/features/time_tracking/data/models/response_orden_trabajo.dart';
 
-class TrackingServiceOrdenTrabajo {
+class OrdenTrabajoService {
   final _api = TrackingApi();
   final String id;
   final String dfecha;
@@ -11,7 +11,7 @@ class TrackingServiceOrdenTrabajo {
   final String ccentrocosto;
   final String supervisor;
   final String taller;
-  TrackingServiceOrdenTrabajo({
+  OrdenTrabajoService({
     required this.id,
     required this.dfecha,
     required this.idplacatracto,

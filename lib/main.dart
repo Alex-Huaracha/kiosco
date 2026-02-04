@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:hgtrack/login/view/empleados_list_page.dart';
-import 'package:hgtrack/utils/app_colors.dart';
 import 'package:provider/provider.dart';
+
+import 'package:hgtrack/core/core.dart';
+import 'package:hgtrack/features/authentication/presentation/pages/empleados_list_page.dart';
 
 void main() {
   runApp(const MainApp());

@@ -1,21 +1,23 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
-import 'package:hgtrack/appseguimiento/model/hgempleadomantenimiento_model.dart';
-import 'package:hgtrack/appseguimiento/model/hgdetalleordentrabajodto_model.dart';
-import 'package:hgtrack/appseguimiento/model/hgordentrabajodto_model.dart';
-import 'package:hgtrack/appseguimiento/model/actividad_tracking_state.dart';
-import 'package:hgtrack/appseguimiento/service/actividad_local_storage_service.dart';
-import 'package:hgtrack/appseguimiento/service/tracking_service_actividades_empleado.dart';
-import 'package:hgtrack/utils/app_colors.dart';
+
+import 'package:hgtrack/core/theme/app_colors.dart';
+import 'package:hgtrack/features/authentication/data/models/empleado.dart';
+import 'package:hgtrack/features/time_tracking/data/models/detalle_orden_trabajo.dart';
+import 'package:hgtrack/features/time_tracking/data/models/orden_trabajo.dart';
+import 'package:hgtrack/features/time_tracking/data/services/activity_service.dart';
+import 'package:hgtrack/features/time_tracking/data/services/local_storage_service.dart';
+import 'package:hgtrack/features/time_tracking/domain/tracking_state.dart';
 
 /// Pantalla de detalle de actividad con control de tiempo
 /// Permite iniciar, pausar, reanudar y finalizar actividades
-class ActividadDetallePage extends StatefulWidget {
+class ActivityDetailPage extends StatefulWidget {
   final HgDetalleOrdenTrabajoDto actividad;
   final HgOrdenTrabajoDto ordentrabajo;
   final HgEmpleadoMantenimientoDto empleado;
 
-  const ActividadDetallePage({
+  const ActivityDetailPage({
     super.key,
     required this.actividad,
     required this.ordentrabajo,
@@ -23,10 +25,10 @@ class ActividadDetallePage extends StatefulWidget {
   });
 
   @override
-  State<ActividadDetallePage> createState() => _ActividadDetallePageState();
+  State<ActivityDetailPage> createState() => _ActivityDetailPageState();
 }
 
-class _ActividadDetallePageState extends State<ActividadDetallePage> {
+class _ActivityDetailPageState extends State<ActivityDetailPage> {
   final _storageService = ActividadLocalStorageService();
   final _observacionesController = TextEditingController();
 
@@ -214,7 +216,7 @@ class _ActividadDetallePageState extends State<ActividadDetallePage> {
 
       // Enviar al backend
       final estadoFinalizado = _trackingState!;
-      final service = TrackingServiceActividadesEmpleado();
+      final service = ActivityService();
 
       // Calcular datos para el request
       final DateTime fechaInicio = estadoFinalizado.periodos.first.inicio;

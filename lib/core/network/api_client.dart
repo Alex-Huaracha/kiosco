@@ -1,13 +1,15 @@
 import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
-import 'package:hgtrack/appseguimiento/model/hgdetalledetalleordentrabajobodydto_model.dart';
-import 'package:hgtrack/appseguimiento/model/hgdetalleordentrabajodto_model.dart';
-import 'package:hgtrack/appseguimiento/model/hgoperadorotrodto_model.dart';
-import 'package:hgtrack/appseguimiento/model/hgresponseordentrabajodto_model.dart';
-import 'package:hgtrack/appseguimiento/model/hgempleadomantenimiento_model.dart';
-import 'package:hgtrack/appseguimiento/model/actividad_empleado_model.dart';
 import 'package:http/http.dart' as http;
-import 'package:hgtrack/appseguimiento/model/hgoperadordto_model.dart';
+
+import 'package:hgtrack/features/authentication/data/models/empleado.dart';
+import 'package:hgtrack/features/time_tracking/data/models/actividad.dart';
+import 'package:hgtrack/features/time_tracking/data/models/detalle_body.dart';
+import 'package:hgtrack/features/time_tracking/data/models/detalle_orden_trabajo.dart';
+import 'package:hgtrack/features/time_tracking/data/models/operador.dart';
+import 'package:hgtrack/features/time_tracking/data/models/operador_otro.dart';
+import 'package:hgtrack/features/time_tracking/data/models/response_orden_trabajo.dart';
 
 class TrackingApi {
   static const String _hgapiEndpoint = kReleaseMode
