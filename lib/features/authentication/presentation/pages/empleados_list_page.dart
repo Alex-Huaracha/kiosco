@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'package:hgtrack/core/network/connectivity_service.dart';
 import 'package:hgtrack/core/theme/app_colors.dart';
-import 'package:hgtrack/features/authentication/data/models/empleado.dart';
+import 'package:hgtrack/features/authentication/data/models/empleado_con_actividades.dart';
 import 'package:hgtrack/features/authentication/data/services/auth_service.dart';
 import 'package:hgtrack/features/authentication/presentation/widgets/empleado_avatar.dart';
 import 'package:hgtrack/features/time_tracking/presentation/pages/activities_list_page.dart';
@@ -17,7 +17,8 @@ class EmpleadosListPage extends StatefulWidget {
 }
 
 class _EmpleadosListPageState extends State<EmpleadosListPage> {
-  List<HgEmpleadoMantenimientoDto>? empleados;
+  /// Lista de empleados con sus actividades (cargados juntos)
+  List<EmpleadoConActividades>? _empleadosConActividades;
   bool isLoading = true;
   String? errorMessage;
 
@@ -29,7 +30,7 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
   void initState() {
     super.initState();
     _initConnectivity();
-    loadEmpleados();
+    _loadAllData();
   }
 
   @override
@@ -49,7 +50,7 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
         final wasOffline = !_isOnline;
         setState(() => _isOnline = isOnline);
 
-        // Si volvio online, refrescar empleados en background
+        // Si volvio online, refrescar datos en background
         if (wasOffline && isOnline) {
           _backgroundRefresh();
         }
@@ -57,53 +58,53 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
     });
   }
 
-  /// Carga empleados con estrategia cache-first
-  Future<void> loadEmpleados() async {
+  /// Carga todos los datos (empleados + actividades) con estrategia cache-first
+  Future<void> _loadAllData() async {
     setState(() {
       isLoading = true;
       errorMessage = null;
     });
 
     try {
-      final trackingService = AuthService();
+      final authService = AuthService();
       // cache-first: retorna cache si existe, o llama API si es primera vez
-      final result = await trackingService.getAllEmpleadosMantenimiento();
+      final result = await authService.getAllEmpleadosConActividades();
 
       setState(() {
         isLoading = false;
         if (result != null && result.isNotEmpty) {
-          empleados = result;
+          _empleadosConActividades = result;
         } else {
           errorMessage = 'No hay empleados con actividades pendientes en este momento';
         }
       });
 
-      // Refrescar desde API en background si hay conexion y se cargo del cache
-      if (_isOnline) {
+      // Refrescar desde API en background si hay conexion
+      if (_isOnline && result != null) {
         _backgroundRefresh();
       }
     } catch (e) {
       setState(() {
         isLoading = false;
-        errorMessage = 'Error al cargar los empleados: $e';
+        errorMessage = 'Error al cargar los datos: $e';
       });
     }
   }
 
-  /// Refresca empleados desde la API en background (sin loading spinner)
+  /// Refresca datos desde la API en background (sin loading spinner)
   Future<void> _backgroundRefresh() async {
     try {
-      final trackingService = AuthService();
-      final freshData = await trackingService.refreshEmpleados();
+      final authService = AuthService();
+      final freshData = await authService.refreshAllData();
 
       if (freshData != null && freshData.isNotEmpty && mounted) {
         setState(() {
-          empleados = freshData;
+          _empleadosConActividades = freshData;
           errorMessage = null;
         });
       }
     } catch (e) {
-      print('Error en background refresh de empleados: $e');
+      print('Error en background refresh: $e');
     }
   }
 
@@ -114,7 +115,7 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
 
   double _calculateAspectRatio(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
-    return width < 900 ? 2.3 : 2.5;  // Vertical: 2.3 (previene overflow), Horizontal: 2.5
+    return width < 900 ? 2.3 : 2.5;
   }
 
   @override
@@ -194,10 +195,10 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
             size: 24,
           ),
           const SizedBox(width: 8),
-          Flexible(
+          const Flexible(
             child: Text(
               'Personal de Mantenimiento',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
                 color: AppColors.primary,
@@ -207,7 +208,7 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
               textAlign: TextAlign.center,
             ),
           ),
-          if (empleados != null && empleados!.isNotEmpty) ...[
+          if (_empleadosConActividades != null && _empleadosConActividades!.isNotEmpty) ...[
             const SizedBox(width: 12),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -216,7 +217,7 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
-                '${empleados!.length}',
+                '${_empleadosConActividades!.length}',
                 style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.bold,
@@ -263,7 +264,7 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
               ),
               const SizedBox(height: 24),
               ElevatedButton.icon(
-                onPressed: loadEmpleados,
+                onPressed: _loadAllData,
                 icon: const Icon(Icons.refresh),
                 label: const Text('Reintentar'),
                 style: ElevatedButton.styleFrom(
@@ -279,7 +280,7 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
       );
     }
 
-    if (empleados == null || empleados!.isEmpty) {
+    if (_empleadosConActividades == null || _empleadosConActividades!.isEmpty) {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(24),
@@ -317,11 +318,12 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
             mainAxisSpacing: 16,
             childAspectRatio: _calculateAspectRatio(context),
           ),
-          itemCount: empleados!.length,
+          itemCount: _empleadosConActividades!.length,
           itemBuilder: (context, index) {
+            final item = _empleadosConActividades![index];
             return EmpleadoCard(
-              empleado: empleados![index],
-              onTap: () => _onEmpleadoSelected(empleados![index]),
+              empleadoConActividades: item,
+              onTap: () => _onEmpleadoSelected(item),
             );
           },
         );
@@ -329,28 +331,34 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
     );
   }
 
-  void _onEmpleadoSelected(HgEmpleadoMantenimientoDto empleado) {
+  /// Navega a la lista de actividades pasando los datos ya cargados
+  void _onEmpleadoSelected(EmpleadoConActividades item) {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => ActivitiesListPage(empleado: empleado),
+        builder: (_) => ActivitiesListPage(
+          empleadoConActividades: item,
+        ),
       ),
     );
   }
 }
 
+/// Card de empleado que muestra nombre, cargo y contador de actividades
 class EmpleadoCard extends StatelessWidget {
-  final HgEmpleadoMantenimientoDto empleado;
+  final EmpleadoConActividades empleadoConActividades;
   final VoidCallback onTap;
 
   const EmpleadoCard({
     super.key,
-    required this.empleado,
+    required this.empleadoConActividades,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    final empleado = empleadoConActividades.empleado;
+    
     return Card(
       elevation: 3,
       shape: RoundedRectangleBorder(
@@ -371,12 +379,12 @@ class EmpleadoCard extends StatelessWidget {
                   // Avatar con iniciales a la izquierda
                   EmpleadoAvatar(
                     iniciales: empleado.iniciales,
-                    size: EmpleadoAvatar.sizeLarge,  // 80px para máxima visibilidad
+                    size: EmpleadoAvatar.sizeLarge,
                   ),
 
                   const SizedBox(width: 12),
 
-                  // Información del empleado a la derecha
+                  // Informacion del empleado a la derecha
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -430,12 +438,12 @@ class EmpleadoCard extends StatelessWidget {
               ),
             ),
 
-            // Badge con contador de actividades (si existe)
-            if (empleado.cantidadTotal != null && empleado.cantidadTotal! > 0)
+            // Badge con contador de actividades
+            if (empleadoConActividades.actividades.isNotEmpty)
               Positioned(
                 top: 12,
                 right: 12,
-                child: _buildActivityBadge(empleado),
+                child: _buildActivityBadge(),
               ),
           ],
         ),
@@ -443,8 +451,12 @@ class EmpleadoCard extends StatelessWidget {
     );
   }
 
-  Widget _buildActivityBadge(HgEmpleadoMantenimientoDto empleado) {
-    final hasBacklog = empleado.cantidadBacklog != null && empleado.cantidadBacklog! > 0;
+  Widget _buildActivityBadge() {
+    final total = empleadoConActividades.actividades.length;
+    final backlogCount = empleadoConActividades.actividades
+        .where((a) => a.detalle?.bbacklog == true)
+        .length;
+    final hasBacklog = backlogCount > 0;
 
     return Stack(
       clipBehavior: Clip.none,
@@ -464,7 +476,7 @@ class EmpleadoCard extends StatelessWidget {
             ],
           ),
           child: Text(
-            '${empleado.cantidadTotal}',
+            '$total',
             style: const TextStyle(
               color: Colors.white,
               fontSize: 16,

@@ -5,9 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:hgtrack/core/network/connectivity_service.dart';
 import 'package:hgtrack/core/theme/app_colors.dart';
 import 'package:hgtrack/features/authentication/data/models/empleado.dart';
+import 'package:hgtrack/features/authentication/data/models/empleado_con_actividades.dart';
 import 'package:hgtrack/features/authentication/presentation/widgets/empleado_avatar.dart';
 import 'package:hgtrack/features/time_tracking/data/models/pending_sync_activity.dart';
-import 'package:hgtrack/features/time_tracking/data/services/activity_service.dart';
 import 'package:hgtrack/features/time_tracking/data/services/pending_sync_service.dart';
 import 'package:hgtrack/features/time_tracking/presentation/pages/activity_detail_page.dart';
 import 'package:hgtrack/features/time_tracking/presentation/widgets/actividad_con_ot_model.dart';
@@ -16,13 +16,18 @@ import 'package:hgtrack/features/time_tracking/presentation/widgets/activity_car
 /// Pantalla principal: Lista de actividades pendientes del empleado
 /// Muestra todas las actividades activas (No Iniciadas + En Proceso) sin agrupar por OT
 /// Al hacer tap en una actividad -> navega a pantalla de detalle
+/// 
+/// Recibe EmpleadoConActividades con las actividades ya cargadas desde el endpoint unificado.
 class ActivitiesListPage extends StatefulWidget {
-  final HgEmpleadoMantenimientoDto empleado;
+  final EmpleadoConActividades empleadoConActividades;
 
   const ActivitiesListPage({
     super.key,
-    required this.empleado,
+    required this.empleadoConActividades,
   });
+
+  /// Acceso directo al empleado (convenience getter)
+  HgEmpleadoMantenimientoDto get empleado => empleadoConActividades.empleado;
 
   @override
   State<ActivitiesListPage> createState() =>
@@ -47,7 +52,7 @@ class _ActivitiesListPageState
   void initState() {
     super.initState();
     _initConnectivity();
-    loadActividades();
+    _processActividades(); // Procesar actividades ya cargadas
     _loadPendingCount();
     _autoSyncIfNeeded();
   }
@@ -68,11 +73,6 @@ class _ActivitiesListPageState
     _connectivitySubscription = connectivity.onlineStream.listen((isOnline) {
       if (mounted) {
         setState(() => _isOnline = isOnline);
-
-        // Si volvio online, refrescar datos en background
-        if (isOnline) {
-          _backgroundRefresh();
-        }
       }
     });
 
@@ -81,7 +81,6 @@ class _ActivitiesListPageState
         connectivity.syncResultStream.listen((result) {
       if (mounted) {
         _loadPendingCount();
-        loadActividades();
         _showSyncResultSnackBar(result);
       }
     });
@@ -103,23 +102,6 @@ class _ActivitiesListPageState
           _showSyncResultSnackBar(result);
         }
       }
-    }
-  }
-
-  /// Refresca datos desde la API en background (sin mostrar loading)
-  Future<void> _backgroundRefresh() async {
-    try {
-      final service = ActivityService();
-      final result = await service.refreshActividades(
-        widget.empleado.id.toString(),
-      );
-
-      if (result != null && mounted) {
-        // Recalcular listas con datos frescos
-        _processOrdenesConActividades(result);
-      }
-    } catch (e) {
-      print('Error en background refresh: $e');
     }
   }
 
@@ -170,53 +152,27 @@ class _ActivitiesListPageState
     }
   }
 
-  Future<void> loadActividades() async {
-    setState(() {
-      isLoading = true;
-      errorMessage = null;
-    });
+  /// Procesa las actividades ya cargadas desde EmpleadoConActividades
+  /// Convierte ActividadEmpleadoDto a ActividadConOt y separa normales de backlog
+  void _processActividades() {
+    final actividades = widget.empleadoConActividades.actividades;
 
-    try {
-      final service = ActivityService();
-      final ordenesConActividades =
-          await service.getOrdenesTrabajoConActividades(
-        widget.empleado.id.toString(),
-      );
-
-      if (ordenesConActividades == null || ordenesConActividades.isEmpty) {
-        setState(() {
-          isLoading = false;
-          errorMessage = 'No tienes actividades asignadas';
-        });
-        return;
-      }
-
-      _processOrdenesConActividades(ordenesConActividades);
-
-      // Refrescar desde API en background si hay conexion
-      if (_isOnline) {
-        _backgroundRefresh();
-      }
-    } catch (e) {
+    if (actividades.isEmpty) {
       setState(() {
         isLoading = false;
-        errorMessage = 'Error al cargar actividades: $e';
+        errorMessage = 'No tienes actividades asignadas';
       });
+      return;
     }
-  }
 
-  /// Procesa las ordenes con actividades y actualiza el estado
-  void _processOrdenesConActividades(
-    List<dynamic> ordenesConActividades,
-  ) {
-    // Desagrupar OTs: convertir a lista plana de actividades con su OT
+    // Convertir ActividadEmpleadoDto a ActividadConOt
     List<ActividadConOt> todasActividades = [];
-    for (var orden in ordenesConActividades) {
-      for (var actividad in orden.actividades) {
+    for (var actividadDto in actividades) {
+      if (actividadDto.detalle != null && actividadDto.ordentrabajo != null) {
         todasActividades.add(
           ActividadConOt(
-            actividad: actividad,
-            ordentrabajo: orden.ordentrabajo,
+            actividad: actividadDto.detalle!,
+            ordentrabajo: actividadDto.ordentrabajo!,
           ),
         );
       }
@@ -301,7 +257,7 @@ class _ActivitiesListPageState
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: loadActividades,
+            onPressed: () => Navigator.pop(context, true), // Volver para recargar desde empleados
             tooltip: 'Actualizar',
           ),
         ],
@@ -413,9 +369,9 @@ class _ActivitiesListPageState
               ),
               const SizedBox(height: 24),
               ElevatedButton.icon(
-                onPressed: loadActividades,
+                onPressed: () => Navigator.pop(context, true), // Volver para recargar
                 icon: const Icon(Icons.refresh),
-                label: const Text('Reintentar'),
+                label: const Text('Volver'),
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 32,
@@ -663,10 +619,9 @@ class _ActivitiesListPageState
       ),
     );
 
-    // Si se finalizo la actividad, recargar la lista y contador de pendientes
+    // Si se finalizo la actividad, volver a pantalla de empleados para recargar
     if (result == true && mounted) {
-      loadActividades();
-      _loadPendingCount();
+      Navigator.pop(context, true); // Indica que hubo cambios
     }
   }
 }
