@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:hgtrack/core/theme/app_colors.dart';
 import 'package:hgtrack/features/authentication/data/models/empleado.dart';
 import 'package:hgtrack/features/authentication/data/services/auth_service.dart';
+import 'package:hgtrack/features/authentication/presentation/widgets/empleado_avatar.dart';
 import 'package:hgtrack/features/time_tracking/presentation/pages/activities_list_page.dart';
 
 class EmpleadosListPage extends StatefulWidget {
@@ -38,7 +39,7 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
         if (result != null && result.isNotEmpty) {
           empleados = result;
         } else {
-          errorMessage = 'No se encontraron empleados de Mantenimiento';
+          errorMessage = 'No hay empleados con actividades pendientes en este momento';
         }
       });
     } catch (e) {
@@ -56,7 +57,7 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
 
   double _calculateAspectRatio(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
-    return width < 900 ? 2.2 : 2.0;
+    return width < 900 ? 2.3 : 2.5;  // Vertical: 2.3 (previene overflow), Horizontal: 2.5
   }
 
   @override
@@ -202,17 +203,18 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
-                Icons.people_outline,
+                Icons.work_off,
                 size: 72,
                 color: AppColors.textSecondary,
               ),
               SizedBox(height: 24),
               Text(
-                'No hay empleados disponibles',
+                'No hay empleados con actividades pendientes',
                 style: TextStyle(
                   fontSize: 18,
                   color: AppColors.textSecondary,
                 ),
+                textAlign: TextAlign.center,
               ),
             ],
           ),
@@ -275,104 +277,137 @@ class EmpleadoCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         splashColor: AppColors.rippleOverlay,
         highlightColor: AppColors.hoverOverlay,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              // Avatar con iniciales a la izquierda
-              EmpleadoAvatar(iniciales: empleado.iniciales),
+        child: Stack(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // Avatar con iniciales a la izquierda
+                  EmpleadoAvatar(
+                    iniciales: empleado.iniciales,
+                    size: EmpleadoAvatar.sizeLarge,  // 80px para máxima visibilidad
+                  ),
 
-              const SizedBox(width: 12),
+                  const SizedBox(width: 12),
 
-              // Información del empleado a la derecha
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Nombre completo
-                    Text(
-                      empleado.nombreCompleto,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                  // Información del empleado a la derecha
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Nombre completo
+                        Padding(
+                          padding: const EdgeInsets.only(right: 40),
+                          child: Text(
+                            empleado.nombreCompleto,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textPrimary,
+                              height: 1.3,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+
+                        const SizedBox(height: 4),
+
+                        // DNI
+                        Text(
+                          'DNI: ${empleado.numerodocumento ?? "N/A"}',
+                          style: const TextStyle(
+                            fontSize: 15,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+
+                        const SizedBox(height: 2),
+
+                        // Cargo
+                        Text(
+                          empleado.cargo ?? "N/A",
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w500,
+                            color: AppColors.textSecondary,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
-
-                    const SizedBox(height: 4),
-
-                    // DNI
-                    Text(
-                      'DNI: ${empleado.numerodocumento ?? "N/A"}',
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-
-                    const SizedBox(height: 2),
-
-                    // Cargo
-                    Text(
-                      empleado.cargo ?? "N/A",
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        color: AppColors.textSecondary,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+
+            // Badge con contador de actividades (si existe)
+            if (empleado.cantidadTotal != null && empleado.cantidadTotal! > 0)
+              Positioned(
+                top: 12,
+                right: 12,
+                child: _buildActivityBadge(empleado),
+              ),
+          ],
         ),
       ),
     );
   }
-}
 
-class EmpleadoAvatar extends StatelessWidget {
-  final String iniciales;
+  Widget _buildActivityBadge(HgEmpleadoMantenimientoDto empleado) {
+    final hasBacklog = empleado.cantidadBacklog != null && empleado.cantidadBacklog! > 0;
 
-  const EmpleadoAvatar({
-    super.key,
-    required this.iniciales,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 70,
-      height: 70,
-      decoration: BoxDecoration(
-        color: AppColors.primary,
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.shadowLight,
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        // Badge principal con contador total
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: AppColors.primary,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.shadowLight,
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: Center(
-        child: Text(
-          iniciales.toUpperCase(),
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 28,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 1.5,
+          child: Text(
+            '${empleado.cantidadTotal}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ),
-      ),
+
+        // Mini-badge de backlog (si aplica)
+        if (hasBacklog)
+          Positioned(
+            top: -2,
+            right: -2,
+            child: Container(
+              width: 14,
+              height: 14,
+              decoration: BoxDecoration(
+                color: AppColors.warning,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: Colors.white,
+                  width: 2,
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
