@@ -43,3 +43,6 @@ app.*.map.json
 /android/app/releas
 .metadata
 pubspec.lock
+
+# Environment variables (contiene URLs locales/ngrok)
+.env

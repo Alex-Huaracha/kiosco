@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:hgtrack/features/authentication/data/models/empleado.dart';
@@ -12,9 +13,16 @@ import 'package:hgtrack/features/time_tracking/data/models/operador_otro.dart';
 import 'package:hgtrack/features/time_tracking/data/models/response_orden_trabajo.dart';
 
 class TrackingApi {
-  static const String _hgapiEndpoint = kReleaseMode
-      ? "https://extranetservicio.hagemsa.org/api/services"
-      : "http://localhost:8080/hgapi";
+  /// Obtiene la URL base del backend según el modo de ejecución
+  /// - Release mode: URL de producción
+  /// - Debug mode: URL desde .env (ngrok o localhost)
+  static String get _hgapiEndpoint {
+    if (kReleaseMode) {
+      return "https://extranetservicio.hagemsa.org/api/services";
+    }
+    // En modo debug, usar variable de entorno o fallback a localhost
+    return dotenv.env['API_BASE_URL'] ?? 'http://localhost:8080/hgapi';
+  }
 
   Future<List<HgOperadorDto>?> getAllTrackingOperador(String dni) async {
     var client = http.Client();
@@ -330,8 +338,7 @@ class TrackingApi {
   Future<List<HgEmpleadoMantenimientoDto>?>
       getAllEmpleadosMantenimiento() async {
     var client = http.Client();
-    var url =
-        'http://extranetservicio.hagemsa.org/api/empleado/empleadoMantenimiento';
+    var url = '$_hgapiEndpoint/listarempleadosconactividades';
     var uri = Uri.parse(url);
 
     String jsonBody = jsonEncode({});
@@ -350,20 +357,8 @@ class TrackingApi {
         if (response.body == "[]" || response.body.isEmpty) {
           return null;
         } else {
-          var empleados = hgEmpleadoMantenimientoDtoFromJson(
+          return hgEmpleadoMantenimientoDtoFromJson(
               const Utf8Decoder().convert(response.bodyBytes));
-
-          // Filtrar solo empleados activos
-          var empleadosActivos = empleados.where((e) => e.activo == 1).toList();
-
-          // Ordenar alfabéticamente por apellido paterno
-          empleadosActivos.sort((a, b) {
-            String apellidoA = a.apellidopaterno ?? '';
-            String apellidoB = b.apellidopaterno ?? '';
-            return apellidoA.compareTo(apellidoB);
-          });
-
-          return empleadosActivos;
         }
       } else {
         print("Error en la solicitud: Código ${response.statusCode}");
