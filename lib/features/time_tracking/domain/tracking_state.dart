@@ -113,10 +113,11 @@ class ActividadTrackingState {
       throw StateError('No hay periodo actual para pausar');
     }
 
-    // Validar duración mínima de 5 segundos
-    final duracionActual = DateTime.now().difference(inicioActual!);
-    if (duracionActual.inSeconds < 5) {
-      throw StateError('El periodo debe tener al menos 5 segundos');
+    // Validar que tenga al menos 5 minutos de tiempo total trabajado
+    final tiempoTotal = tiempoTotalTrabajado;
+    if (tiempoTotal.inMinutes < 5) {
+      throw StateError(
+          'Debe trabajar al menos 5 minutos antes de poder pausar');
     }
 
     final ahora = DateTime.now();
@@ -160,6 +161,32 @@ class ActividadTrackingState {
         ),
       ],
       observaciones: observaciones,
+    );
+  }
+
+  /// Cancela la actividad (solo si tiene menos de 5 minutos trabajados)
+  /// Descarta todo el progreso y vuelve a estado inicial
+  ActividadTrackingState cancelar() {
+    if (estado != EstadoActividad.enProceso &&
+        estado != EstadoActividad.pausada) {
+      throw StateError(
+          'Solo se puede cancelar una actividad en proceso o pausada');
+    }
+
+    // Validar que tenga menos de 5 minutos
+    final tiempoTotal = tiempoTotalTrabajado;
+    if (tiempoTotal.inMinutes >= 5) {
+      throw StateError(
+          'No se puede cancelar una actividad con 5 o más minutos trabajados');
+    }
+
+    // Volver al estado inicial (sin periodos)
+    return ActividadTrackingState(
+      idActividad: idActividad,
+      estado: EstadoActividad.noIniciada,
+      inicioActual: null,
+      periodos: [],
+      observaciones: null,
     );
   }
 
