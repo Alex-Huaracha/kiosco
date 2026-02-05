@@ -4,6 +4,7 @@ import 'package:hgtrack/core/theme/app_colors.dart';
 import 'package:hgtrack/features/authentication/data/models/empleado.dart';
 import 'package:hgtrack/features/authentication/presentation/widgets/empleado_avatar.dart';
 import 'package:hgtrack/features/time_tracking/data/services/activity_service.dart';
+import 'package:hgtrack/features/time_tracking/data/services/pending_sync_service.dart';
 import 'package:hgtrack/features/time_tracking/presentation/pages/activity_detail_page.dart';
 import 'package:hgtrack/features/time_tracking/presentation/widgets/actividad_con_ot_model.dart';
 import 'package:hgtrack/features/time_tracking/presentation/widgets/activity_card.dart';
@@ -27,13 +28,26 @@ class ActivitiesListPage extends StatefulWidget {
 class _ActivitiesListPageState
     extends State<ActivitiesListPage> {
   List<ActividadConOt>? actividadesPendientes;
+  List<ActividadConOt>? actividadesEnBacklog;
   bool isLoading = true;
   String? errorMessage;
+  int _pendingSyncCount = 0;
+  bool _isSyncing = false;
+  bool _backlogExpanded = false;
 
   @override
   void initState() {
     super.initState();
     loadActividades();
+    _loadPendingCount();
+  }
+
+  Future<void> _loadPendingCount() async {
+    final syncService = PendingSyncService();
+    final count = await syncService.getPendingCount();
+    setState(() {
+      _pendingSyncCount = count;
+    });
   }
 
   Future<void> loadActividades() async {
@@ -71,8 +85,9 @@ class _ActivitiesListPageState
       }
 
       // Filtrar solo actividades activas (no cerradas, incluye backlog)
+      // Incluye bcerrada == false Y bcerrada == null
       List<ActividadConOt> actividadesActivas = todasActividades.where((item) {
-        return item.actividad.bcerrada == false;
+        return item.actividad.bcerrada != true;
       }).toList();
 
       if (actividadesActivas.isEmpty) {
@@ -83,12 +98,23 @@ class _ActivitiesListPageState
         return;
       }
 
-      // Ordenar actividades por prioridad
-      _ordenarActividades(actividadesActivas);
+      // Separar en dos grupos: normales y backlog
+      List<ActividadConOt> actividadesNormales = actividadesActivas
+          .where((item) => item.actividad.bbacklog != true)
+          .toList();
+
+      List<ActividadConOt> actividadesBacklogList = actividadesActivas
+          .where((item) => item.actividad.bbacklog == true)
+          .toList();
+
+      // Ordenar cada grupo independientemente
+      _ordenarActividades(actividadesNormales);
+      _ordenarActividades(actividadesBacklogList);
 
       setState(() {
         isLoading = false;
-        actividadesPendientes = actividadesActivas;
+        actividadesPendientes = actividadesNormales;
+        actividadesEnBacklog = actividadesBacklogList;
       });
     } catch (e) {
       setState(() {
@@ -229,6 +255,11 @@ class _ActivitiesListPageState
               );
             }),
 
+            const SizedBox(height: 24), // Espaciado antes de backlog
+
+            // Sección de Backlog (colapsable)
+            _buildSeccionBacklog(),
+
             const SizedBox(height: 80), // Espacio final para scroll
           ],
         ),
@@ -236,49 +267,284 @@ class _ActivitiesListPageState
     );
   }
 
-  /// Card con información del empleado (foto, nombre, cargo)
+  /// Card con información del empleado (foto, nombre, cargo) y botón de sincronización
   Widget _buildEmpleadoCard() {
     return Card(
       elevation: 2,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // Avatar con iniciales
-            EmpleadoAvatar(iniciales: widget.empleado.iniciales),
-            const SizedBox(width: 16),
-            // Información del empleado
+            // COLUMNA 1: Info personal (70%)
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              flex: 7,
+              child: Row(
                 children: [
-                  Text(
-                    widget.empleado.nombreCompleto,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.textPrimary,
+                  // Avatar con iniciales
+                  EmpleadoAvatar(iniciales: widget.empleado.iniciales),
+                  const SizedBox(width: 16),
+                  // Información del empleado
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.empleado.nombreCompleto,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.textPrimary,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          widget.empleado.cargo ?? 'Sin cargo',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: AppColors.textSecondary,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    widget.empleado.cargo ?? 'Sin cargo',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      color: AppColors.textSecondary,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
+            ),
+
+            const SizedBox(width: 16),
+
+            // COLUMNA 2: Botón de sincronización (30%)
+            Expanded(
+              flex: 3,
+              child: _buildSyncButton(),
             ),
           ],
         ),
       ),
     );
+  }
+
+  /// Botón de sincronización vertical compacto
+  Widget _buildSyncButton() {
+    // Estado 1: Sincronizando
+    if (_isSyncing) {
+      return Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+        decoration: BoxDecoration(
+          color: AppColors.primary.withAlpha(26),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.primary, width: 2),
+        ),
+        child: const Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: 28,
+              height: 28,
+              child: CircularProgressIndicator(
+                strokeWidth: 3,
+                valueColor: AlwaysStoppedAnimation(AppColors.primary),
+              ),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Enviando...',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: AppColors.primary,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Estado 2: Todo sincronizado
+    if (_pendingSyncCount == 0) {
+      return Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+        decoration: BoxDecoration(
+          color: Colors.grey[200],
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.cloud_done,
+              size: 32,
+              color: Colors.grey[600],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Todo OK',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+                color: Colors.grey[700],
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Estado 3: Pendientes de sincronizar
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: _onSyncPendingActivities,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+          decoration: BoxDecoration(
+            color: AppColors.warning.withAlpha(26),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.warning, width: 2),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Stack(
+                alignment: Alignment.center,
+                clipBehavior: Clip.none,
+                children: [
+                  const Icon(
+                    Icons.cloud_upload,
+                    size: 32,
+                    color: AppColors.warning,
+                  ),
+                  Positioned(
+                    right: -6,
+                    top: -6,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: AppColors.error,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
+                      ),
+                      constraints: const BoxConstraints(
+                        minWidth: 22,
+                        minHeight: 22,
+                      ),
+                      child: Center(
+                        child: Text(
+                          '$_pendingSyncCount',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Sincronizar',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.warning,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Handler de sincronización de actividades pendientes
+  Future<void> _onSyncPendingActivities() async {
+    setState(() => _isSyncing = true);
+
+    final syncService = PendingSyncService();
+
+    // Mostrar SnackBar de progreso
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation(Colors.white),
+                ),
+              ),
+              SizedBox(width: 16),
+              Text('Sincronizando actividades...'),
+            ],
+          ),
+          duration: Duration(seconds: 30),
+        ),
+      );
+    }
+
+    // Intentar sincronizar todas
+    final result = await syncService.syncAllPending();
+
+    setState(() => _isSyncing = false);
+
+    // Actualizar contador
+    await _loadPendingCount();
+
+    // Recargar lista (por si cambiaron estados)
+    await loadActividades();
+
+    // Mostrar resultado
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).clearSnackBars();
+
+    if (result.todosExitosos) {
+      // ✅ Todas exitosas
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('✓ ${result.exitosos} actividades sincronizadas'),
+          backgroundColor: AppColors.success,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } else if (result.parcial) {
+      // ⚠️ Parcial
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '⚠️ ${result.exitosos} de ${result.total} sincronizadas',
+          ),
+          backgroundColor: AppColors.warning,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } else {
+      // ❌ Todas fallaron
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✗ No se pudo sincronizar. Verifica tu conexión.'),
+          backgroundColor: AppColors.error,
+          duration: Duration(seconds: 5),
+        ),
+      );
+    }
   }
 
   /// Título de sección con contador de actividades
@@ -320,6 +586,104 @@ class _ActivitiesListPageState
     );
   }
 
+  /// Sección de Backlog (colapsable)
+  Widget _buildSeccionBacklog() {
+    if (actividadesEnBacklog == null || actividadesEnBacklog!.isEmpty) {
+      return const SizedBox.shrink(); // No mostrar si no hay backlog
+    }
+
+    final count = actividadesEnBacklog!.length;
+
+    return Column(
+      children: [
+        // Header clickeable
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () {
+              setState(() {
+                _backlogExpanded = !_backlogExpanded;
+              });
+            },
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: AppColors.warning.withAlpha(26),
+                border: Border.all(color: AppColors.warning, width: 1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.warning_amber_rounded,
+                    size: 24,
+                    color: AppColors.warning,
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'Backlog',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.warning,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.warning,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '$count',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Icon(
+                    _backlogExpanded ? Icons.expand_less : Icons.expand_more,
+                    size: 28,
+                    color: AppColors.warning,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+
+        // Lista expandible
+        AnimatedCrossFade(
+          duration: const Duration(milliseconds: 300),
+          crossFadeState: _backlogExpanded
+              ? CrossFadeState.showSecond
+              : CrossFadeState.showFirst,
+          firstChild: const SizedBox.shrink(), // Colapsado
+          secondChild: Column(
+            children: [
+              const SizedBox(height: 12),
+              ...actividadesEnBacklog!.map((item) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: ActividadConOtCard(
+                    item: item,
+                    onTap: () => _onActividadTapped(item),
+                  ),
+                );
+              }),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   /// Callback al hacer tap en una actividad
   void _onActividadTapped(ActividadConOt item) async {
     final result = await Navigator.push(
@@ -333,9 +697,10 @@ class _ActivitiesListPageState
       ),
     );
 
-    // Si se finalizó la actividad, recargar la lista
+    // Si se finalizó la actividad, recargar la lista y contador de pendientes
     if (result == true && mounted) {
       loadActividades();
+      _loadPendingCount();
     }
   }
 }
