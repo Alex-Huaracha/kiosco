@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:hgtrack/core/network/connectivity_service.dart';
 import 'package:hgtrack/core/theme/app_colors.dart';
 import 'package:hgtrack/features/authentication/data/models/empleado.dart';
 import 'package:hgtrack/features/time_tracking/data/models/detalle_orden_trabajo.dart';
@@ -44,17 +45,35 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
   bool _isLoading = true;
   bool _isSaving = false;
 
+  // Conectividad
+  bool _isOnline = true;
+  StreamSubscription<bool>? _connectivitySubscription;
+
   @override
   void initState() {
     super.initState();
+    _initConnectivity();
     _loadState();
   }
 
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    _connectivitySubscription?.cancel();
     _observacionesController.dispose();
     super.dispose();
+  }
+
+  /// Inicializa suscripcion a ConnectivityService
+  void _initConnectivity() {
+    final connectivity = ConnectivityService();
+    _isOnline = connectivity.isOnline;
+
+    _connectivitySubscription = connectivity.onlineStream.listen((isOnline) {
+      if (mounted) {
+        setState(() => _isOnline = isOnline);
+      }
+    });
   }
 
   /// Carga el estado guardado o crea uno nuevo
@@ -280,7 +299,7 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
 
     try {
       // Finalizar con observaciones actuales
-      _trackingState!.finalizar(
+      _trackingState = _trackingState!.finalizar(
         observacionesFinales: _observacionesController.text.trim(),
       );
 
@@ -409,13 +428,47 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
           ),
           centerTitle: true,
         ),
-        body: _isLoading
-            ? const Center(
-                child: CircularProgressIndicator(color: AppColors.primary),
-              )
-            : _isSaving
-                ? _buildSavingOverlay()
-                : _buildBody(),
+        body: Column(
+          children: [
+            // Banner offline
+            if (!_isOnline) _buildOfflineBanner(),
+
+            // Contenido principal
+            Expanded(
+              child: _isLoading
+                  ? const Center(
+                      child: CircularProgressIndicator(color: AppColors.primary),
+                    )
+                  : _isSaving
+                      ? _buildSavingOverlay()
+                      : _buildBody(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Banner rojo de sin conexion
+  Widget _buildOfflineBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      color: AppColors.error,
+      child: const Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.wifi_off, color: Colors.white, size: 20),
+          SizedBox(width: 8),
+          Text(
+            'Sin conexion a internet',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
       ),
     );
   }

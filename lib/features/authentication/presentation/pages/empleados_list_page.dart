@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import 'package:hgtrack/core/network/connectivity_service.dart';
 import 'package:hgtrack/core/theme/app_colors.dart';
 import 'package:hgtrack/features/authentication/data/models/empleado.dart';
 import 'package:hgtrack/features/authentication/data/services/auth_service.dart';
@@ -18,12 +21,43 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
   bool isLoading = true;
   String? errorMessage;
 
+  // Conectividad
+  bool _isOnline = true;
+  StreamSubscription<bool>? _connectivitySubscription;
+
   @override
   void initState() {
     super.initState();
+    _initConnectivity();
     loadEmpleados();
   }
 
+  @override
+  void dispose() {
+    _connectivitySubscription?.cancel();
+    super.dispose();
+  }
+
+  /// Inicializa ConnectivityService (primera pantalla de la app)
+  void _initConnectivity() {
+    final connectivity = ConnectivityService();
+    connectivity.initialize();
+    _isOnline = connectivity.isOnline;
+
+    _connectivitySubscription = connectivity.onlineStream.listen((isOnline) {
+      if (mounted) {
+        final wasOffline = !_isOnline;
+        setState(() => _isOnline = isOnline);
+
+        // Si volvio online, refrescar empleados en background
+        if (wasOffline && isOnline) {
+          _backgroundRefresh();
+        }
+      }
+    });
+  }
+
+  /// Carga empleados con estrategia cache-first
   Future<void> loadEmpleados() async {
     setState(() {
       isLoading = true;
@@ -32,6 +66,7 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
 
     try {
       final trackingService = AuthService();
+      // cache-first: retorna cache si existe, o llama API si es primera vez
       final result = await trackingService.getAllEmpleadosMantenimiento();
 
       setState(() {
@@ -42,11 +77,33 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
           errorMessage = 'No hay empleados con actividades pendientes en este momento';
         }
       });
+
+      // Refrescar desde API en background si hay conexion y se cargo del cache
+      if (_isOnline) {
+        _backgroundRefresh();
+      }
     } catch (e) {
       setState(() {
         isLoading = false;
         errorMessage = 'Error al cargar los empleados: $e';
       });
+    }
+  }
+
+  /// Refresca empleados desde la API en background (sin loading spinner)
+  Future<void> _backgroundRefresh() async {
+    try {
+      final trackingService = AuthService();
+      final freshData = await trackingService.refreshEmpleados();
+
+      if (freshData != null && freshData.isNotEmpty && mounted) {
+        setState(() {
+          empleados = freshData;
+          errorMessage = null;
+        });
+      }
+    } catch (e) {
+      print('Error en background refresh de empleados: $e');
     }
   }
 
@@ -76,11 +133,38 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
       ),
       body: Column(
         children: [
+          // Banner offline
+          if (!_isOnline) _buildOfflineBanner(),
+
           const SizedBox(height: 16),
           _buildBanner(),
           const SizedBox(height: 16),
           Expanded(
             child: _buildBody(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Banner rojo de sin conexion
+  Widget _buildOfflineBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      color: AppColors.error,
+      child: const Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.wifi_off, color: Colors.white, size: 20),
+          SizedBox(width: 8),
+          Text(
+            'Sin conexion a internet',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ],
       ),

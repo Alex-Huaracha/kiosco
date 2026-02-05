@@ -1,10 +1,14 @@
+import 'package:hgtrack/core/cache/cache_service.dart';
 import 'package:hgtrack/core/network/api_client.dart';
 import 'package:hgtrack/features/authentication/data/models/empleado.dart';
 import 'package:hgtrack/features/time_tracking/data/models/actividad.dart';
 import 'package:hgtrack/features/time_tracking/data/models/detalle_orden_trabajo.dart';
 
 class ActivityService {
+  final _cache = CacheService();
+
   /// Obtiene las actividades del empleado y las agrupa por Orden de Trabajo
+  /// Usa estrategia cache-first: cache primero, API si no hay cache.
   ///
   /// [idEmpleado] - ID del empleado como String
   ///
@@ -14,8 +18,19 @@ class ActivityService {
     String idEmpleado,
   ) async {
     try {
-      final api = TrackingApi();
-      final actividades = await api.getAllActividadesEmpleado(idEmpleado);
+      // Intentar cache primero
+      List<ActividadEmpleadoDto>? actividades;
+      final cached = await _cache.getActividades(idEmpleado);
+      if (cached != null && cached.isNotEmpty) {
+        actividades = cached;
+      } else {
+        // Sin cache: llamar a la API
+        final api = TrackingApi();
+        actividades = await api.getAllActividadesEmpleado(idEmpleado);
+        if (actividades != null && actividades.isNotEmpty) {
+          await _cache.saveActividades(idEmpleado, actividades);
+        }
+      }
 
       if (actividades == null || actividades.isEmpty) {
         return null;
@@ -166,5 +181,75 @@ class ActivityService {
       print("Error en servicio de finalización: $e");
       return null;
     }
+  }
+
+  /// Actualiza el cache de actividades desde la API y retorna datos agrupados.
+  /// Retorna los datos frescos o null si la API falla.
+  /// El cache existente se mantiene intacto en caso de error.
+  Future<List<OrdenTrabajoConActividades>?> refreshActividades(
+    String idEmpleado,
+  ) async {
+    try {
+      final api = TrackingApi();
+      final actividades = await api.getAllActividadesEmpleado(idEmpleado);
+
+      if (actividades == null || actividades.isEmpty) {
+        return null;
+      }
+
+      // Guardar datos frescos en cache
+      await _cache.saveActividades(idEmpleado, actividades);
+
+      // Agrupar y retornar (reutilizando la misma logica)
+      return _agruparActividades(actividades);
+    } catch (e) {
+      print('Error al refrescar actividades desde API: $e');
+      return null;
+    }
+  }
+
+  /// Agrupa actividades crudas en OTs (logica compartida)
+  List<OrdenTrabajoConActividades>? _agruparActividades(
+    List<ActividadEmpleadoDto> actividades,
+  ) {
+    Map<int, OrdenTrabajoConActividades> grupos = {};
+
+    for (var actividad in actividades) {
+      if (actividad.detalle == null || actividad.ordentrabajo == null) {
+        continue;
+      }
+
+      int idOT = actividad.ordentrabajo!.id!;
+
+      if (!grupos.containsKey(idOT)) {
+        grupos[idOT] = OrdenTrabajoConActividades(
+          ordentrabajo: actividad.ordentrabajo!,
+          actividades: [],
+        );
+      }
+
+      grupos[idOT]!.actividades.add(actividad.detalle!);
+    }
+
+    List<OrdenTrabajoConActividades> resultado = grupos.values.toList();
+
+    for (var grupo in resultado) {
+      _ordenarActividades(grupo.actividades);
+    }
+
+    resultado.sort((a, b) {
+      int prioridadA = _obtenerPrioridadEstado(a.estadoBadge);
+      int prioridadB = _obtenerPrioridadEstado(b.estadoBadge);
+
+      if (prioridadA != prioridadB) {
+        return prioridadA.compareTo(prioridadB);
+      }
+
+      int fechaA = a.ordentrabajo.dfecha ?? 0;
+      int fechaB = b.ordentrabajo.dfecha ?? 0;
+      return fechaB.compareTo(fechaA);
+    });
+
+    return resultado;
   }
 }

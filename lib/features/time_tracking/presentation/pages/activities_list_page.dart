@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import 'package:hgtrack/core/network/connectivity_service.dart';
 import 'package:hgtrack/core/theme/app_colors.dart';
 import 'package:hgtrack/features/authentication/data/models/empleado.dart';
 import 'package:hgtrack/features/authentication/presentation/widgets/empleado_avatar.dart';
+import 'package:hgtrack/features/time_tracking/data/models/pending_sync_activity.dart';
 import 'package:hgtrack/features/time_tracking/data/services/activity_service.dart';
 import 'package:hgtrack/features/time_tracking/data/services/pending_sync_service.dart';
 import 'package:hgtrack/features/time_tracking/presentation/pages/activity_detail_page.dart';
@@ -11,7 +15,7 @@ import 'package:hgtrack/features/time_tracking/presentation/widgets/activity_car
 
 /// Pantalla principal: Lista de actividades pendientes del empleado
 /// Muestra todas las actividades activas (No Iniciadas + En Proceso) sin agrupar por OT
-/// Al hacer tap en una actividad → navega a pantalla de detalle
+/// Al hacer tap en una actividad -> navega a pantalla de detalle
 class ActivitiesListPage extends StatefulWidget {
   final HgEmpleadoMantenimientoDto empleado;
 
@@ -32,22 +36,138 @@ class _ActivitiesListPageState
   bool isLoading = true;
   String? errorMessage;
   int _pendingSyncCount = 0;
-  bool _isSyncing = false;
   bool _backlogExpanded = false;
+
+  // Conectividad
+  bool _isOnline = true;
+  StreamSubscription<bool>? _connectivitySubscription;
+  StreamSubscription<SyncResult>? _syncResultSubscription;
 
   @override
   void initState() {
     super.initState();
+    _initConnectivity();
     loadActividades();
     _loadPendingCount();
+    _autoSyncIfNeeded();
+  }
+
+  @override
+  void dispose() {
+    _connectivitySubscription?.cancel();
+    _syncResultSubscription?.cancel();
+    super.dispose();
+  }
+
+  /// Inicializa suscripciones a ConnectivityService
+  void _initConnectivity() {
+    final connectivity = ConnectivityService();
+    _isOnline = connectivity.isOnline;
+
+    // Escuchar cambios de conectividad
+    _connectivitySubscription = connectivity.onlineStream.listen((isOnline) {
+      if (mounted) {
+        setState(() => _isOnline = isOnline);
+
+        // Si volvio online, refrescar datos en background
+        if (isOnline) {
+          _backgroundRefresh();
+        }
+      }
+    });
+
+    // Escuchar resultados de auto-sync
+    _syncResultSubscription =
+        connectivity.syncResultStream.listen((result) {
+      if (mounted) {
+        _loadPendingCount();
+        loadActividades();
+        _showSyncResultSnackBar(result);
+      }
+    });
+  }
+
+  /// Intenta sincronizar actividades pendientes al entrar a la pantalla
+  Future<void> _autoSyncIfNeeded() async {
+    final syncService = PendingSyncService();
+    final count = await syncService.getPendingCount();
+
+    if (count > 0 && _isOnline) {
+      print('Auto-sync al entrar: $count actividades pendientes');
+      final connectivity = ConnectivityService();
+      final result = await connectivity.forceSync();
+
+      if (result != null && mounted) {
+        _loadPendingCount();
+        if (result.total > 0) {
+          _showSyncResultSnackBar(result);
+        }
+      }
+    }
+  }
+
+  /// Refresca datos desde la API en background (sin mostrar loading)
+  Future<void> _backgroundRefresh() async {
+    try {
+      final service = ActivityService();
+      final result = await service.refreshActividades(
+        widget.empleado.id.toString(),
+      );
+
+      if (result != null && mounted) {
+        // Recalcular listas con datos frescos
+        _processOrdenesConActividades(result);
+      }
+    } catch (e) {
+      print('Error en background refresh: $e');
+    }
+  }
+
+  /// Muestra SnackBar con resultado de sincronizacion
+  void _showSyncResultSnackBar(SyncResult result) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).clearSnackBars();
+
+    if (result.todosExitosos && result.total > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${result.exitosos} actividad${result.exitosos > 1 ? "es" : ""} sincronizada${result.exitosos > 1 ? "s" : ""}',
+          ),
+          backgroundColor: AppColors.success,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } else if (result.parcial) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${result.exitosos} de ${result.total} sincronizadas',
+          ),
+          backgroundColor: AppColors.warning,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } else if (result.todosFallaron && result.total > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se pudo sincronizar. Se reintentara automaticamente.'),
+          backgroundColor: AppColors.error,
+          duration: Duration(seconds: 5),
+        ),
+      );
+    }
   }
 
   Future<void> _loadPendingCount() async {
     final syncService = PendingSyncService();
     final count = await syncService.getPendingCount();
-    setState(() {
-      _pendingSyncCount = count;
-    });
+    if (mounted) {
+      setState(() {
+        _pendingSyncCount = count;
+      });
+    }
   }
 
   Future<void> loadActividades() async {
@@ -71,51 +191,12 @@ class _ActivitiesListPageState
         return;
       }
 
-      // Desagrupar OTs: convertir a lista plana de actividades con su OT
-      List<ActividadConOt> todasActividades = [];
-      for (var orden in ordenesConActividades) {
-        for (var actividad in orden.actividades) {
-          todasActividades.add(
-            ActividadConOt(
-              actividad: actividad,
-              ordentrabajo: orden.ordentrabajo,
-            ),
-          );
-        }
+      _processOrdenesConActividades(ordenesConActividades);
+
+      // Refrescar desde API en background si hay conexion
+      if (_isOnline) {
+        _backgroundRefresh();
       }
-
-      // Filtrar solo actividades activas (no cerradas, incluye backlog)
-      // Incluye bcerrada == false Y bcerrada == null
-      List<ActividadConOt> actividadesActivas = todasActividades.where((item) {
-        return item.actividad.bcerrada != true;
-      }).toList();
-
-      if (actividadesActivas.isEmpty) {
-        setState(() {
-          isLoading = false;
-          errorMessage = 'No tienes actividades pendientes';
-        });
-        return;
-      }
-
-      // Separar en dos grupos: normales y backlog
-      List<ActividadConOt> actividadesNormales = actividadesActivas
-          .where((item) => item.actividad.bbacklog != true)
-          .toList();
-
-      List<ActividadConOt> actividadesBacklogList = actividadesActivas
-          .where((item) => item.actividad.bbacklog == true)
-          .toList();
-
-      // Ordenar cada grupo independientemente
-      _ordenarActividades(actividadesNormales);
-      _ordenarActividades(actividadesBacklogList);
-
-      setState(() {
-        isLoading = false;
-        actividadesPendientes = actividadesNormales;
-        actividadesEnBacklog = actividadesBacklogList;
-      });
     } catch (e) {
       setState(() {
         isLoading = false;
@@ -124,16 +205,66 @@ class _ActivitiesListPageState
     }
   }
 
+  /// Procesa las ordenes con actividades y actualiza el estado
+  void _processOrdenesConActividades(
+    List<dynamic> ordenesConActividades,
+  ) {
+    // Desagrupar OTs: convertir a lista plana de actividades con su OT
+    List<ActividadConOt> todasActividades = [];
+    for (var orden in ordenesConActividades) {
+      for (var actividad in orden.actividades) {
+        todasActividades.add(
+          ActividadConOt(
+            actividad: actividad,
+            ordentrabajo: orden.ordentrabajo,
+          ),
+        );
+      }
+    }
+
+    // Filtrar solo actividades activas (no cerradas, incluye backlog)
+    List<ActividadConOt> actividadesActivas = todasActividades.where((item) {
+      return item.actividad.bcerrada != true;
+    }).toList();
+
+    if (actividadesActivas.isEmpty) {
+      setState(() {
+        isLoading = false;
+        errorMessage = 'No tienes actividades pendientes';
+      });
+      return;
+    }
+
+    // Separar en dos grupos: normales y backlog
+    List<ActividadConOt> actividadesNormales = actividadesActivas
+        .where((item) => item.actividad.bbacklog != true)
+        .toList();
+
+    List<ActividadConOt> actividadesBacklogList = actividadesActivas
+        .where((item) => item.actividad.bbacklog == true)
+        .toList();
+
+    // Ordenar cada grupo independientemente
+    _ordenarActividades(actividadesNormales);
+    _ordenarActividades(actividadesBacklogList);
+
+    setState(() {
+      isLoading = false;
+      actividadesPendientes = actividadesNormales;
+      actividadesEnBacklog = actividadesBacklogList;
+    });
+  }
+
   /// Ordena actividades por prioridad:
   /// 1. Actividades normales (no backlog) primero
   /// 2. Backlog al final
   /// Dentro de cada grupo:
   ///   - En Proceso primero
   ///   - No Iniciadas segundo
-  ///   - Por fecha más reciente
+  ///   - Por fecha mas reciente
   void _ordenarActividades(List<ActividadConOt> actividades) {
     actividades.sort((a, b) {
-      // Prioridad MÁXIMA: Backlog siempre al final
+      // Prioridad MAXIMA: Backlog siempre al final
       bool aBacklog = a.actividad.bbacklog == true;
       bool bBacklog = b.actividad.bbacklog == true;
       if (aBacklog && !bBacklog) return 1; // a es backlog, va al final
@@ -153,7 +284,7 @@ class _ActivitiesListPageState
       if (aNoIniciada && !bNoIniciada) return -1;
       if (!aNoIniciada && bNoIniciada) return 1;
 
-      // Mismo nivel: ordenar por fecha de registro (más reciente primero)
+      // Mismo nivel: ordenar por fecha de registro (mas reciente primero)
       int fechaA = a.actividad.dfecreg ?? 0;
       int fechaB = b.actividad.dfecreg ?? 0;
       return fechaB.compareTo(fechaA);
@@ -175,7 +306,77 @@ class _ActivitiesListPageState
           ),
         ],
       ),
-      body: _buildBody(),
+      body: Column(
+        children: [
+          // Banner de conectividad offline
+          if (!_isOnline) _buildOfflineBanner(),
+
+          // Banner de actividades pendientes de sync
+          if (_pendingSyncCount > 0) _buildPendingSyncBanner(),
+
+          // Contenido principal
+          Expanded(child: _buildBody()),
+        ],
+      ),
+    );
+  }
+
+  /// Banner rojo de sin conexion
+  Widget _buildOfflineBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      color: AppColors.error,
+      child: const Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.wifi_off, color: Colors.white, size: 20),
+          SizedBox(width: 8),
+          Text(
+            'Sin conexion a internet',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Banner naranja de actividades pendientes de sincronizacion
+  Widget _buildPendingSyncBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      color: AppColors.warning.withAlpha(230),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.cloud_upload, color: Colors.white, size: 20),
+          const SizedBox(width: 8),
+          Text(
+            '$_pendingSyncCount actividad${_pendingSyncCount > 1 ? "es" : ""} pendiente${_pendingSyncCount > 1 ? "s" : ""} de envio',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          if (_isOnline) ...[
+            const SizedBox(width: 8),
+            const SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation(Colors.white),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -239,7 +440,7 @@ class _ActivitiesListPageState
 
             const SizedBox(height: 16),
 
-            // Título de sección con contador
+            // Titulo de seccion con contador
             _buildTituloSeccion(),
 
             const SizedBox(height: 12),
@@ -257,7 +458,7 @@ class _ActivitiesListPageState
 
             const SizedBox(height: 24), // Espaciado antes de backlog
 
-            // Sección de Backlog (colapsable)
+            // Seccion de Backlog (colapsable)
             _buildSeccionBacklog(),
 
             const SizedBox(height: 80), // Espacio final para scroll
@@ -267,287 +468,52 @@ class _ActivitiesListPageState
     );
   }
 
-  /// Card con información del empleado (foto, nombre, cargo) y botón de sincronización
+  /// Card con informacion del empleado
   Widget _buildEmpleadoCard() {
     return Card(
       elevation: 2,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // COLUMNA 1: Info personal (70%)
-            Expanded(
-              flex: 7,
-              child: Row(
-                children: [
-                  // Avatar con iniciales
-                  EmpleadoAvatar(iniciales: widget.empleado.iniciales),
-                  const SizedBox(width: 16),
-                  // Información del empleado
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          widget.empleado.nombreCompleto,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.textPrimary,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          widget.empleado.cargo ?? 'Sin cargo',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            color: AppColors.textSecondary,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
+            // Avatar con iniciales
+            EmpleadoAvatar(iniciales: widget.empleado.iniciales),
             const SizedBox(width: 16),
-
-            // COLUMNA 2: Botón de sincronización (30%)
+            // Informacion del empleado
             Expanded(
-              flex: 3,
-              child: _buildSyncButton(),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Botón de sincronización vertical compacto
-  Widget _buildSyncButton() {
-    // Estado 1: Sincronizando
-    if (_isSyncing) {
-      return Container(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-        decoration: BoxDecoration(
-          color: AppColors.primary.withAlpha(26),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.primary, width: 2),
-        ),
-        child: const Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            SizedBox(
-              width: 28,
-              height: 28,
-              child: CircularProgressIndicator(
-                strokeWidth: 3,
-                valueColor: AlwaysStoppedAnimation(AppColors.primary),
-              ),
-            ),
-            SizedBox(height: 8),
-            Text(
-              'Enviando...',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-                color: AppColors.primary,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      );
-    }
-
-    // Estado 2: Todo sincronizado
-    if (_pendingSyncCount == 0) {
-      return Container(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-        decoration: BoxDecoration(
-          color: Colors.grey[200],
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.cloud_done,
-              size: 32,
-              color: Colors.grey[600],
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Todo OK',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
-                color: Colors.grey[700],
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      );
-    }
-
-    // Estado 3: Pendientes de sincronizar
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: _onSyncPendingActivities,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-          decoration: BoxDecoration(
-            color: AppColors.warning.withAlpha(26),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.warning, width: 2),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Stack(
-                alignment: Alignment.center,
-                clipBehavior: Clip.none,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(
-                    Icons.cloud_upload,
-                    size: 32,
-                    color: AppColors.warning,
-                  ),
-                  Positioned(
-                    right: -6,
-                    top: -6,
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: AppColors.error,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2),
-                      ),
-                      constraints: const BoxConstraints(
-                        minWidth: 22,
-                        minHeight: 22,
-                      ),
-                      child: Center(
-                        child: Text(
-                          '$_pendingSyncCount',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
+                  Text(
+                    widget.empleado.nombreCompleto,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
                     ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    widget.empleado.cargo ?? 'Sin cargo',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: AppColors.textSecondary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
-              const SizedBox(height: 6),
-              const Text(
-                'Sincronizar',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.warning,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  /// Handler de sincronización de actividades pendientes
-  Future<void> _onSyncPendingActivities() async {
-    setState(() => _isSyncing = true);
-
-    final syncService = PendingSyncService();
-
-    // Mostrar SnackBar de progreso
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Row(
-            children: [
-              SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation(Colors.white),
-                ),
-              ),
-              SizedBox(width: 16),
-              Text('Sincronizando actividades...'),
-            ],
-          ),
-          duration: Duration(seconds: 30),
-        ),
-      );
-    }
-
-    // Intentar sincronizar todas
-    final result = await syncService.syncAllPending();
-
-    setState(() => _isSyncing = false);
-
-    // Actualizar contador
-    await _loadPendingCount();
-
-    // Recargar lista (por si cambiaron estados)
-    await loadActividades();
-
-    // Mostrar resultado
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).clearSnackBars();
-
-    if (result.todosExitosos) {
-      // ✅ Todas exitosas
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('✓ ${result.exitosos} actividades sincronizadas'),
-          backgroundColor: AppColors.success,
-          duration: const Duration(seconds: 3),
-        ),
-      );
-    } else if (result.parcial) {
-      // ⚠️ Parcial
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '⚠️ ${result.exitosos} de ${result.total} sincronizadas',
-          ),
-          backgroundColor: AppColors.warning,
-          duration: const Duration(seconds: 5),
-        ),
-      );
-    } else {
-      // ❌ Todas fallaron
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('✗ No se pudo sincronizar. Verifica tu conexión.'),
-          backgroundColor: AppColors.error,
-          duration: Duration(seconds: 5),
-        ),
-      );
-    }
-  }
-
-  /// Título de sección con contador de actividades
+  /// Titulo de seccion con contador de actividades
   Widget _buildTituloSeccion() {
     final count = actividadesPendientes?.length ?? 0;
     return Row(
@@ -558,9 +524,9 @@ class _ActivitiesListPageState
           color: AppColors.primary,
         ),
         const SizedBox(width: 8),
-        Text(
-          'Actividades del día',
-          style: const TextStyle(
+        const Text(
+          'Actividades del dia',
+          style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.bold,
             color: AppColors.textPrimary,
@@ -586,7 +552,7 @@ class _ActivitiesListPageState
     );
   }
 
-  /// Sección de Backlog (colapsable)
+  /// Seccion de Backlog (colapsable)
   Widget _buildSeccionBacklog() {
     if (actividadesEnBacklog == null || actividadesEnBacklog!.isEmpty) {
       return const SizedBox.shrink(); // No mostrar si no hay backlog
@@ -697,7 +663,7 @@ class _ActivitiesListPageState
       ),
     );
 
-    // Si se finalizó la actividad, recargar la lista y contador de pendientes
+    // Si se finalizo la actividad, recargar la lista y contador de pendientes
     if (result == true && mounted) {
       loadActividades();
       _loadPendingCount();
