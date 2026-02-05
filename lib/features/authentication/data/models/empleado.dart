@@ -23,9 +23,23 @@ class HgEmpleadoMantenimientoResponse {
 }
 
 List<HgEmpleadoMantenimientoDto> hgEmpleadoMantenimientoDtoFromJson(String str) {
-  final Map<String, dynamic> jsonMap = json.decode(str);
-  final response = HgEmpleadoMantenimientoResponse.fromJson(jsonMap);
-  return response.empleado ?? [];
+  final dynamic decoded = json.decode(str);
+  
+  // Si la respuesta es un array directo (nuevo endpoint)
+  if (decoded is List) {
+    return List<HgEmpleadoMantenimientoDto>.from(
+      decoded.map((x) => HgEmpleadoMantenimientoDto.fromJson(x))
+    );
+  }
+  
+  // Si la respuesta es un objeto con wrapper (endpoint antiguo)
+  if (decoded is Map<String, dynamic>) {
+    final response = HgEmpleadoMantenimientoResponse.fromJson(decoded);
+    return response.empleado ?? [];
+  }
+  
+  // Si no es ninguno de los dos, retornar lista vacía
+  return [];
 }
 
 String hgEmpleadoMantenimientoDtoToJson(List<HgEmpleadoMantenimientoDto> data) =>
@@ -43,6 +57,9 @@ class HgEmpleadoMantenimientoDto {
   String? fechanacimiento;
   String? sexo;
   int? activo;
+  int? cantidadActividades;
+  int? cantidadBacklog;
+  int? cantidadTotal;
 
   HgEmpleadoMantenimientoDto({
     this.id,
@@ -56,6 +73,9 @@ class HgEmpleadoMantenimientoDto {
     this.fechanacimiento,
     this.sexo,
     this.activo,
+    this.cantidadActividades,
+    this.cantidadBacklog,
+    this.cantidadTotal,
   });
 
   factory HgEmpleadoMantenimientoDto.fromJson(Map<String, dynamic> json) =>
@@ -71,6 +91,9 @@ class HgEmpleadoMantenimientoDto {
         fechanacimiento: json["fechanacimiento"],
         sexo: json["sexo"],
         activo: json["activo"],
+        cantidadActividades: json["cantidadActividades"],
+        cantidadBacklog: json["cantidadBacklog"],
+        cantidadTotal: json["cantidadTotal"],
       );
 
   Map<String, dynamic> toJson() => {
@@ -85,6 +108,9 @@ class HgEmpleadoMantenimientoDto {
         "fechanacimiento": fechanacimiento,
         "sexo": sexo,
         "activo": activo,
+        "cantidadActividades": cantidadActividades,
+        "cantidadBacklog": cantidadBacklog,
+        "cantidadTotal": cantidadTotal,
       };
 
   // Método para obtener el nombre completo formateado
