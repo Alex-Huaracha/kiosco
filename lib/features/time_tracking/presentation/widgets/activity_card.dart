@@ -8,8 +8,9 @@ import 'package:hgtrack/features/time_tracking/presentation/widgets/actividad_co
 /// Card individual de actividad con información completa de la OT
 /// 
 /// Muestra:
-/// - Mini-header: Placa + N° OT + Badge de estado
+/// - Mini-header: Placa + Codigo (TP-1234 o TP-1234 ST-5) + Badge de estado
 /// - Header: Título de actividad + Fecha de OT
+/// - Info empleado principal (solo para ST)
 /// - Tiempo trabajado (si aplica)
 /// - Sistema/Subsistema
 /// - Badge de falla reportada (si aplica)
@@ -27,38 +28,41 @@ class ActividadConOtCard extends StatelessWidget {
   HgDetalleOrdenTrabajoDto get actividad => item.actividad;
   HgOrdenTrabajoDto get ot => item.ordentrabajo;
 
+  /// Verifica si es una Sub-Tarea
+  bool get _esSubTarea => item.esSubTarea;
+
   /// Determina el estado visual de la actividad
-  EstadoActividad get _estado {
+  EstadoActividadCard get _estado {
     // Backlog (prioridad máxima en detección)
     if (actividad.bbacklog == true) {
-      return EstadoActividad.backlog;
+      return EstadoActividadCard.backlog;
     }
 
     // En proceso (tiene inicio pero no fin)
     if (actividad.dtiempoinicio != null && actividad.dtiempofin == null) {
-      return EstadoActividad.enProceso;
+      return EstadoActividadCard.enProceso;
     }
 
     // No iniciada (pendiente)
-    return EstadoActividad.noIniciada;
+    return EstadoActividadCard.noIniciada;
   }
 
   /// Configuración de colores según estado
   _ConfigEstado get _config {
     switch (_estado) {
-      case EstadoActividad.noIniciada:
+      case EstadoActividadCard.noIniciada:
         return _ConfigEstado(
           color: AppColors.textSecondary,
           texto: 'No Iniciada',
           icono: Icons.radio_button_unchecked,
         );
-      case EstadoActividad.enProceso:
+      case EstadoActividadCard.enProceso:
         return _ConfigEstado(
           color: AppColors.primary,
           texto: 'En Proceso',
           icono: Icons.play_circle,
         );
-      case EstadoActividad.backlog:
+      case EstadoActividadCard.backlog:
         return _ConfigEstado(
           color: AppColors.warning,
           texto: 'Backlog',
@@ -117,7 +121,13 @@ class ActividadConOtCard extends StatelessWidget {
   bool get _mostrarHoraFin => actividad.dtiempofin != null;
 
   bool get _mostrarTiempo =>
-      _minutosEstimados != null && _estado == EstadoActividad.enProceso;
+      _minutosEstimados != null && _estado == EstadoActividadCard.enProceso;
+
+  /// Verifica si debe mostrar info del empleado principal (solo para ST con empleado asignado)
+  bool get _mostrarEmpleadoPrincipal =>
+      _esSubTarea && 
+      item.empleadoPrincipal != null && 
+      !item.empleadoPrincipal!.sinAsignar;
 
   @override
   Widget build(BuildContext context) {
@@ -156,25 +166,31 @@ class ActividadConOtCard extends StatelessWidget {
 
               const SizedBox(height: 8),
 
-              // 3. Tiempo trabajado (si aplica)
+              // 3. Empleado principal (solo para ST)
+              if (_mostrarEmpleadoPrincipal) ...[
+                _buildEmpleadoPrincipal(),
+                const SizedBox(height: 6),
+              ],
+
+              // 4. Tiempo trabajado (si aplica)
               if (_mostrarTiempo) ...[
                 _buildTiempoTrabajado(),
                 const SizedBox(height: 6),
               ],
 
-              // 4. Sistema/Subsistema (si existe)
+              // 5. Sistema/Subsistema (si existe)
               if (_tieneSistema) ...[
                 _buildSistemaSubsistema(),
                 const SizedBox(height: 6),
               ],
 
-              // 5. Badge Falla Reportada (si aplica)
+              // 6. Badge Falla Reportada (si aplica)
               if (_esFallaReportada) ...[
                 _buildBadgeFalla(),
                 const SizedBox(height: 6),
               ],
 
-              // 6. Hora inicio + Chevron
+              // 7. Hora inicio + Chevron
               _buildFooter(config),
             ],
           ),
@@ -183,36 +199,70 @@ class ActividadConOtCard extends StatelessWidget {
     );
   }
 
-  /// Mini-header con Placa + OT + Badge Estado
+  /// Mini-header con Placa + Codigo (TP/ST) + Badge Estado
   Widget _buildMiniHeader(_ConfigEstado config) {
+    // Color de fondo: morado claro para ST, azul claro para TP
+    final bgColor = _esSubTarea 
+        ? AppColors.subtareaBackground 
+        : AppColors.bannerBackground;
+    final borderColor = _esSubTarea 
+        ? AppColors.subtarea.withAlpha(51) 
+        : AppColors.primary.withAlpha(51);
+    final iconColor = _esSubTarea ? AppColors.subtarea : AppColors.primary;
+    final textColor = _esSubTarea ? AppColors.subtarea : AppColors.primary;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: AppColors.bannerBackground,
+        color: bgColor,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: AppColors.primary.withAlpha(51),
+          color: borderColor,
           width: 1,
         ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.max,
         children: [
-          const Icon(
-            Icons.local_shipping,
+          // Icono: persona para ST, camion para TP
+          Icon(
+            _esSubTarea ? Icons.person_outline : Icons.local_shipping,
             size: 16,
-            color: AppColors.primary,
+            color: iconColor,
           ),
           const SizedBox(width: 6),
-          Text(
-            '${ot.idplacatracto ?? "N/A"} • OT-${ot.id ?? "N/A"}',
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-              color: AppColors.primary,
+          // Placa + Codigo
+          Expanded(
+            child: Text(
+              '${ot.idplacatracto ?? "N/A"} • ${item.codigoDisplay}',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                color: textColor,
+              ),
+              overflow: TextOverflow.ellipsis,
             ),
           ),
-          const Spacer(),
+          const SizedBox(width: 8),
+          // Badge de tipo (solo para ST)
+          if (_esSubTarea) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: AppColors.subtarea,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text(
+                'Asistencia',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
           // Badge de estado
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -305,6 +355,58 @@ class ActividadConOtCard extends StatelessWidget {
           ],
         ),
       ],
+    );
+  }
+
+  /// Info del empleado principal (solo para Sub-Tareas)
+  Widget _buildEmpleadoPrincipal() {
+    final empleado = item.empleadoPrincipal;
+    if (empleado == null) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.subtareaBackground,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: AppColors.subtarea.withAlpha(51),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.person,
+            size: 16,
+            color: AppColors.subtarea,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Responsable:',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                Text(
+                  empleado.cnombreemp ?? 'Sin nombre',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.subtarea,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 

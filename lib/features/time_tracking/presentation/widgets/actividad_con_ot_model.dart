@@ -1,3 +1,4 @@
+import 'package:hgtrack/features/time_tracking/data/models/actividad.dart';
 import 'package:hgtrack/features/time_tracking/data/models/detalle_orden_trabajo.dart';
 import 'package:hgtrack/features/time_tracking/data/models/orden_trabajo.dart';
 
@@ -5,18 +6,49 @@ import 'package:hgtrack/features/time_tracking/data/models/orden_trabajo.dart';
 /// 
 /// Se usa para agrupar una actividad con su orden de trabajo asociada,
 /// facilitando el paso de datos entre pantallas y widgets.
+/// 
+/// Ahora soporta tanto Tareas Principales (TP) como Sub-Tareas (ST).
 class ActividadConOt {
   final HgDetalleOrdenTrabajoDto actividad;
   final HgOrdenTrabajoDto ordentrabajo;
+  
+  /// DTO completo con info de tipo, codigo, empleadoPrincipal, etc.
+  /// Solo disponible cuando se construye desde ActividadEmpleadoDto
+  final ActividadEmpleadoDto? actividadDto;
 
   ActividadConOt({
     required this.actividad,
     required this.ordentrabajo,
+    this.actividadDto,
   });
+
+  /// Verifica si es una Sub-Tarea (asistencia)
+  bool get esSubTarea => actividadDto?.esSubTarea ?? false;
+
+  /// Verifica si es una Tarea Principal
+  bool get esTareaPrincipal => actividadDto?.esTareaPrincipal ?? true;
+
+  /// Obtiene el tipo de actividad: "TP" o "ST"
+  String get tipo => actividadDto?.tipo ?? "TP";
+
+  /// Obtiene el codigo formateado: "TP-1234" o "TP-1234 ST-5"
+  String get codigoDisplay => actividadDto?.codigoDisplay ?? "TP-${actividad.id ?? 'N/A'}";
+
+  /// Obtiene info del empleado principal (solo para ST)
+  EmpleadoPrincipalDto? get empleadoPrincipal => actividadDto?.empleadoPrincipal;
+
+  /// Obtiene la sub-actividad especifica (solo para ST)
+  String? get subActividad => actividadDto?.subActividad;
+
+  /// Obtiene el tiempo estimado en minutos (solo para ST)
+  int? get tiempoEstimado => actividadDto?.tiempoEstimado;
+
+  /// Obtiene el ID de asignacion (solo para ST)
+  int? get idAsignacion => actividadDto?.idAsignacion;
 }
 
-/// Enumeración de estados de actividad para visualización
-enum EstadoActividad {
+/// Enumeración de estados de actividad para visualización en cards
+enum EstadoActividadCard {
   noIniciada,
   enProceso,
   backlog,

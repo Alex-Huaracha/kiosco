@@ -12,6 +12,7 @@ import 'package:hgtrack/features/time_tracking/data/services/activity_service.da
 import 'package:hgtrack/features/time_tracking/data/services/local_storage_service.dart';
 import 'package:hgtrack/features/time_tracking/data/services/pending_sync_service.dart';
 import 'package:hgtrack/features/time_tracking/domain/tracking_state.dart';
+import 'package:hgtrack/features/time_tracking/presentation/widgets/actividad_con_ot_model.dart' hide EstadoActividadCard;
 import 'package:hgtrack/features/time_tracking/presentation/widgets/activity_info_card.dart';
 import 'package:hgtrack/features/time_tracking/presentation/widgets/current_state_card.dart';
 import 'package:hgtrack/features/time_tracking/presentation/widgets/observations_field.dart';
@@ -20,16 +21,22 @@ import 'package:hgtrack/features/time_tracking/presentation/widgets/timeline_wid
 
 /// Pantalla de detalle de actividad con control de tiempo
 /// Permite iniciar, pausar, reanudar y finalizar actividades
+/// Soporta tanto Tareas Principales (TP) como Sub-Tareas (ST)
 class ActivityDetailPage extends StatefulWidget {
   final HgDetalleOrdenTrabajoDto actividad;
   final HgOrdenTrabajoDto ordentrabajo;
   final HgEmpleadoMantenimientoDto empleado;
+  
+  /// Información completa de la actividad (incluye tipo TP/ST, empleadoPrincipal, etc.)
+  /// Puede ser null para compatibilidad con navegación directa sin el modelo completo
+  final ActividadConOt? actividadConOt;
 
   const ActivityDetailPage({
     super.key,
     required this.actividad,
     required this.ordentrabajo,
     required this.empleado,
+    this.actividadConOt,
   });
 
   @override
@@ -275,7 +282,7 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
     }
   }
 
-  /// Acción: Finalizar actividad
+  /// Acción: Finalizar actividad (soporta TP y ST)
   Future<void> _onFinalizar() async {
     if (_trackingState == null) return;
 
@@ -312,27 +319,51 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
       final DateTime fechaFin = DateTime.now();
       final int minutosTotal = estadoFinalizado.tiempoTotalTrabajado.inMinutes;
 
-      print('Enviando actividad al backend:');
-      print('  - ID: ${widget.actividad.id}');
+      // Detectar si es TP o ST
+      final esSubTarea = widget.actividadConOt?.esSubTarea ?? false;
+      final tipoLabel = esSubTarea ? 'Sub-Tarea ST' : 'Tarea Principal TP';
+
+      print('Enviando $tipoLabel al backend:');
+      print('  - ID Detalle: ${widget.actividad.id}');
+      if (esSubTarea) {
+        print('  - ID Asignacion: ${widget.actividadConOt?.idAsignacion}');
+      }
       print('  - Empleado: ${widget.empleado.id}');
       print('  - Inicio: $fechaInicio');
       print('  - Fin: $fechaFin');
       print('  - Minutos: $minutosTotal');
 
-      // Llamar al servicio
-      final resultado = await service.finalizarActividad(
-        actividad: widget.actividad,
-        empleado: widget.empleado,
-        tiempoInicio: fechaInicio,
-        tiempoFin: fechaFin,
-        minutosEmpleado: minutosTotal,
-        observaciones: _observacionesController.text.trim(),
-      );
+      bool exito = false;
 
-      if (resultado == null) {
+      if (esSubTarea && widget.actividadConOt?.actividadDto != null) {
+        // Sub-Tarea (ST) - usar servicio unificado
+        exito = await service.finalizarActividadUnificado(
+          actividadDto: widget.actividadConOt!.actividadDto!,
+          empleado: widget.empleado,
+          tiempoInicio: fechaInicio,
+          tiempoFin: fechaFin,
+          minutosEmpleado: minutosTotal,
+          observaciones: _observacionesController.text.trim(),
+        );
+      } else {
+        // Tarea Principal (TP) - usar método original
+        final resultado = await service.finalizarActividad(
+          actividad: widget.actividad,
+          empleado: widget.empleado,
+          tiempoInicio: fechaInicio,
+          tiempoFin: fechaFin,
+          minutosEmpleado: minutosTotal,
+          observaciones: _observacionesController.text.trim(),
+        );
+        exito = resultado != null;
+      }
+
+      if (!exito) {
         // Error al enviar al backend - Guardar en cola de pendientes
         final pendingActivity = PendingSyncActivity(
+          tipo: esSubTarea ? "ST" : "TP",
           idActividad: widget.actividad.id!,
+          idAsignacion: widget.actividadConOt?.idAsignacion,
           idEmpleado: widget.empleado.id!,
           nombreActividad: widget.actividad.cactividad ?? 'Sin nombre',
           nombreEmpleado: widget.empleado.nombreCompleto,
@@ -354,12 +385,12 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
+            SnackBar(
               content: Text(
-                '✓ Actividad finalizada. Se sincronizará cuando haya conexión.',
+                '$tipoLabel finalizada. Se sincronizara cuando haya conexion.',
               ),
               backgroundColor: AppColors.success,
-              duration: Duration(seconds: 4),
+              duration: const Duration(seconds: 4),
             ),
           );
 
@@ -374,8 +405,8 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Actividad finalizada correctamente'),
+          SnackBar(
+            content: Text('$tipoLabel finalizada correctamente'),
             backgroundColor: AppColors.success,
           ),
         );
@@ -523,6 +554,198 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
     );
   }
 
+  /// Verifica si debe mostrar info del empleado principal (solo ST con empleado asignado)
+  bool get _mostrarEmpleadoPrincipal =>
+      widget.actividadConOt?.esSubTarea == true &&
+      widget.actividadConOt?.empleadoPrincipal != null &&
+      !widget.actividadConOt!.empleadoPrincipal!.sinAsignar;
+
+  /// Card con información del empleado principal (solo para Sub-Tareas)
+  Widget _buildEmpleadoPrincipalCard() {
+    final empleado = widget.actividadConOt?.empleadoPrincipal;
+    if (empleado == null) return const SizedBox.shrink();
+
+    return Card(
+      elevation: 2,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          border: Border(
+            left: BorderSide(
+              color: AppColors.subtarea,
+              width: 4,
+            ),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header con badge de asistencia
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.subtarea,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.person_outline, size: 14, color: Colors.white),
+                      SizedBox(width: 4),
+                      Text(
+                        'Asistencia',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    widget.actividadConOt?.codigoDisplay ?? '',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.subtarea,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            // Empleado principal
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 20,
+                  backgroundColor: AppColors.subtareaBackground,
+                  child: Icon(
+                    Icons.person,
+                    size: 24,
+                    color: AppColors.subtarea,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Responsable de la tarea:',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      Text(
+                        empleado.cnombreemp ?? 'Sin nombre',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (empleado.ccargoemp != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          empleado.ccargoemp!,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+
+            // Sub-actividad (si existe)
+            if (widget.actividadConOt?.subActividad != null) ...[
+              const SizedBox(height: 12),
+              const Divider(color: AppColors.divider),
+              const SizedBox(height: 8),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.assignment_outlined,
+                    size: 18,
+                    color: AppColors.subtarea,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Tu sub-actividad:',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                        Text(
+                          widget.actividadConOt!.subActividad!,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: AppColors.subtarea,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+
+            // Tiempo estimado (si existe)
+            if (widget.actividadConOt?.tiempoEstimado != null) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.timer_outlined,
+                    size: 16,
+                    color: AppColors.textSecondary,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Tiempo estimado: ${_formatearMinutos(widget.actividadConOt!.tiempoEstimado!)}',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Formatea minutos a texto legible
+  String _formatearMinutos(int minutos) {
+    if (minutos < 60) return '$minutos min';
+    final horas = minutos ~/ 60;
+    final mins = minutos % 60;
+    return mins > 0 ? '${horas}h ${mins}min' : '${horas}h';
+  }
+
   /// Layout vertical (portrait) - Una columna con todos los elementos
   Widget _buildVerticalLayout() {
     return Center(
@@ -531,6 +754,12 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            // 0. Empleado Principal (solo para ST)
+            if (_mostrarEmpleadoPrincipal) ...[
+              _buildEmpleadoPrincipalCard(),
+              const SizedBox(height: 16),
+            ],
+
             // 1. Info de la OT
             OrderInfoCard(ordenTrabajo: widget.ordentrabajo),
             const SizedBox(height: 16),
@@ -580,6 +809,12 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            // 0. Empleado Principal (solo para ST) - Full width
+            if (_mostrarEmpleadoPrincipal) ...[
+              _buildEmpleadoPrincipalCard(),
+              const SizedBox(height: 16),
+            ],
+
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

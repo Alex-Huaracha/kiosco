@@ -30,6 +30,10 @@ class AppColors {
   static const Color warning = Color(0xFFF57C00);        // Naranja - Advertencias
   static const Color info = Color(0xFF0288D1);           // Azul claro - Información
   
+  // Sub-Tarea (Asistencia)
+  static const Color subtarea = Color(0xFF7B1FA2);       // Morado - Sub-tareas (asistencias)
+  static const Color subtareaBackground = Color(0xFFF3E5F5); // Morado muy claro - Background ST
+  
   // HG Corporate - Solo para branding
   static const Color hgRed = Color(0xFFE02E30);          // Rojo HG original - Solo logo
   static const Color hgRedLight = Color(0x1CE02E30);     // Rojo HG transparente - Backgrounds

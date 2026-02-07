@@ -173,6 +173,7 @@ class _ActivitiesListPageState
           ActividadConOt(
             actividad: actividadDto.detalle!,
             ordentrabajo: actividadDto.ordentrabajo!,
+            actividadDto: actividadDto, // Incluir DTO completo para info de tipo, empleadoPrincipal, etc.
           ),
         );
       }
@@ -615,6 +616,7 @@ class _ActivitiesListPageState
           actividad: item.actividad,
           ordentrabajo: item.ordentrabajo,
           empleado: widget.empleado,
+          actividadConOt: item, // Pasar item completo con info de TP/ST
         ),
       ),
     );
