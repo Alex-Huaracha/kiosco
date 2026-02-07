@@ -79,6 +79,33 @@ class PendingSyncService {
     }
   }
 
+  /// Obtiene los IDs de actividades (TP) pendientes de sincronización.
+  /// Usado para filtrar actividades ya finalizadas de la lista.
+  Future<Set<int>> getPendingActivityIds() async {
+    try {
+      final activities = await getPendingActivities();
+      return activities.map((a) => a.idActividad).toSet();
+    } catch (e) {
+      print('Error al obtener IDs de actividades pendientes: $e');
+      return {};
+    }
+  }
+
+  /// Obtiene los IDs de asignaciones (ST) pendientes de sincronización.
+  /// Usado para filtrar sub-tareas ya finalizadas de la lista.
+  Future<Set<int>> getPendingAsignacionIds() async {
+    try {
+      final activities = await getPendingActivities();
+      return activities
+          .where((a) => a.idAsignacion != null)
+          .map((a) => a.idAsignacion!)
+          .toSet();
+    } catch (e) {
+      print('Error al obtener IDs de asignaciones pendientes: $e');
+      return {};
+    }
+  }
+
   /// Verifica si existe una actividad específica en la cola de pendientes.
   /// Busca por idActividad (TP) o idAsignacion (ST).
   Future<bool> hasPendingActivity({

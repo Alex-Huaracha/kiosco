@@ -154,7 +154,8 @@ class _ActivitiesListPageState
 
   /// Procesa las actividades ya cargadas desde EmpleadoConActividades
   /// Convierte ActividadEmpleadoDto a ActividadConOt y separa normales de backlog
-  void _processActividades() {
+  /// Filtra actividades que ya fueron finalizadas y están en cola de sync
+  Future<void> _processActividades() async {
     final actividades = widget.empleadoConActividades.actividades;
 
     if (actividades.isEmpty) {
@@ -164,6 +165,11 @@ class _ActivitiesListPageState
       });
       return;
     }
+
+    // Obtener IDs de actividades pendientes de sync (ya finalizadas offline)
+    final pendingService = PendingSyncService();
+    final pendingActivityIds = await pendingService.getPendingActivityIds();
+    final pendingAsignacionIds = await pendingService.getPendingAsignacionIds();
 
     // Convertir ActividadEmpleadoDto a ActividadConOt
     List<ActividadConOt> todasActividades = [];
@@ -178,6 +184,17 @@ class _ActivitiesListPageState
         );
       }
     }
+
+    // Filtrar actividades que ya fueron finalizadas y están en cola de sync
+    todasActividades = todasActividades.where((item) {
+      if (item.esSubTarea) {
+        // Para ST, verificar por idAsignacion
+        return !pendingAsignacionIds.contains(item.idAsignacion);
+      } else {
+        // Para TP, verificar por id del detalle
+        return !pendingActivityIds.contains(item.actividad.id);
+      }
+    }).toList();
 
     // Filtrar solo actividades activas (no cerradas, incluye backlog)
     List<ActividadConOt> actividadesActivas = todasActividades.where((item) {
@@ -621,9 +638,52 @@ class _ActivitiesListPageState
       ),
     );
 
-    // Si se finalizo la actividad, volver a pantalla de empleados para recargar
-    if (result == true && mounted) {
-      Navigator.pop(context, true); // Indica que hubo cambios
+    // Si se finalizo la actividad, actualizar la lista
+    if (result != null && result is Map && result['success'] == true && mounted) {
+      _onActividadFinalizada(result);
+    }
+  }
+
+  /// Maneja la finalizacion de una actividad
+  /// Remueve la actividad de la lista local y refresca en background
+  void _onActividadFinalizada(Map<dynamic, dynamic> result) {
+    final int? actividadId = result['actividadId'];
+    final int? idAsignacion = result['idAsignacion'];
+    final bool esSubTarea = result['esSubTarea'] ?? false;
+
+    if (actividadId == null) return;
+
+    setState(() {
+      // Remover de la lista de pendientes
+      actividadesPendientes?.removeWhere((item) {
+        if (esSubTarea) {
+          // Para ST, comparar por idAsignacion
+          return item.idAsignacion == idAsignacion;
+        } else {
+          // Para TP, comparar por id del detalle
+          return item.actividad.id == actividadId;
+        }
+      });
+
+      // Remover de la lista de backlog (por si acaso)
+      actividadesEnBacklog?.removeWhere((item) {
+        if (esSubTarea) {
+          return item.idAsignacion == idAsignacion;
+        } else {
+          return item.actividad.id == actividadId;
+        }
+      });
+    });
+
+    // Actualizar contador de pendientes de sync
+    _loadPendingCount();
+
+    // Si no quedan actividades, volver a la pantalla de empleados
+    final totalActividades = (actividadesPendientes?.length ?? 0) + 
+                             (actividadesEnBacklog?.length ?? 0);
+    if (totalActividades == 0) {
+      // Volver indicando que hubo cambios para que se recargue la lista de empleados
+      Navigator.pop(context, true);
     }
   }
 }

@@ -394,8 +394,13 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
             ),
           );
 
-          // Volver a la lista (actividad finalizada localmente)
-          Navigator.pop(context, true);
+          // Volver a la lista con info de la actividad finalizada
+          Navigator.pop(context, {
+            'success': true,
+            'actividadId': widget.actividad.id,
+            'idAsignacion': widget.actividadConOt?.idAsignacion,
+            'esSubTarea': esSubTarea,
+          });
         }
         return;
       }
@@ -411,8 +416,13 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
           ),
         );
 
-        // Volver a la pantalla anterior indicando que se finalizó
-        Navigator.pop(context, true);
+        // Volver a la lista con info de la actividad finalizada
+        Navigator.pop(context, {
+          'success': true,
+          'actividadId': widget.actividad.id,
+          'idAsignacion': widget.actividadConOt?.idAsignacion,
+          'esSubTarea': esSubTarea,
+        });
       }
     } catch (e) {
       setState(() => _isSaving = false);
