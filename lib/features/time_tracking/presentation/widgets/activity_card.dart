@@ -32,13 +32,19 @@ class ActividadConOtCard extends StatelessWidget {
   bool get _esSubTarea => item.esSubTarea;
 
   /// Determina el estado visual de la actividad
+  /// Considera tanto datos de BD como tracking local de SharedPreferences
   EstadoActividadCard get _estado {
     // Backlog (prioridad máxima en detección)
     if (actividad.bbacklog == true) {
       return EstadoActividadCard.backlog;
     }
 
-    // En proceso (tiene inicio pero no fin)
+    // En proceso: considera tracking local O datos de BD
+    // Si tiene tracking local activo, está en proceso
+    if (item.tieneTrackingLocal && item.localDtiempoinicio != null) {
+      return EstadoActividadCard.enProceso;
+    }
+    // Si tiene inicio en BD pero no fin, está en proceso
     if (actividad.dtiempoinicio != null && actividad.dtiempofin == null) {
       return EstadoActividadCard.enProceso;
     }
@@ -71,43 +77,69 @@ class ActividadConOtCard extends StatelessWidget {
     }
   }
 
-  /// Calcula minutos trabajados (aproximado, sin pausas)
+  /// Minutos trabajados: prioriza BD, luego tracking local (ya calculado)
   int? get _minutosEstimados {
+    // Tiempo registrado en BD (actividad finalizada)
     if (actividad.nminutosemp != null) {
-      return actividad.nminutosemp; // Tiempo registrado en BD
+      return actividad.nminutosemp;
     }
 
-    if (actividad.dtiempoinicio != null) {
-      final inicio =
-          DateTime.fromMillisecondsSinceEpoch(actividad.dtiempoinicio!);
-      final fin = actividad.dtiempofin != null
-          ? DateTime.fromMillisecondsSinceEpoch(actividad.dtiempofin!)
-          : DateTime.now();
-      return fin.difference(inicio).inMinutes;
-    }
-
-    return null;
+    // Tiempo desde tracking local (ya calculado, no recalcular)
+    return item.localMinutosTrabajados;
   }
 
-  /// Formatea minutos a texto legible "2h 30min" o "45min"
-  String _formatearMinutos(int minutos) {
+  /// Formatea minutos a texto compacto "2h 30m" o "45m"
+  String _formatearMinutosCompacto(int minutos) {
     if (minutos < 60) {
-      return '$minutos min';
+      return '${minutos}m';
     }
     final horas = minutos ~/ 60;
     final mins = minutos % 60;
-    return mins > 0 ? '${horas}h ${mins}min' : '${horas}h';
+    return mins > 0 ? '${horas}h ${mins}m' : '${horas}h';
   }
 
-  /// Formatea hora inicio a formato AM/PM
-  String _formatearHoraInicio(int? millis) {
-    if (millis == null) return '';
-    final fecha = DateTime.fromMillisecondsSinceEpoch(millis);
+  /// Formatea hora de DateTime a formato compacto AM/PM
+  String _formatearHoraCompacta(DateTime? fecha) {
+    if (fecha == null) return '';
     final hora = fecha.hour;
     final minuto = fecha.minute.toString().padLeft(2, '0');
     final periodo = hora >= 12 ? 'PM' : 'AM';
     final hora12 = hora > 12 ? hora - 12 : (hora == 0 ? 12 : hora);
     return '$hora12:$minuto $periodo';
+  }
+
+  /// Formatea fecha de milisegundos a formato "DD/MM/YYYY"
+  String _formatearFechaCompacta(int? millis) {
+    if (millis == null) return '';
+    final fecha = DateTime.fromMillisecondsSinceEpoch(millis);
+    String dosDigitos(int n) => n.toString().padLeft(2, '0');
+    return '${dosDigitos(fecha.day)}/${dosDigitos(fecha.month)}/${fecha.year}';
+  }
+
+  /// Obtiene la hora de inicio efectiva (prioriza tracking local sobre BD)
+  DateTime? get _horaInicioEfectiva {
+    // Priorizar tracking local sobre BD
+    if (item.localDtiempoinicio != null) {
+      return item.localDtiempoinicio;
+    }
+    // Fallback a BD
+    if (actividad.dtiempoinicio != null) {
+      return DateTime.fromMillisecondsSinceEpoch(actividad.dtiempoinicio!);
+    }
+    return null;
+  }
+
+  /// Obtiene la hora de fin efectiva (prioriza tracking local sobre BD)
+  DateTime? get _horaFinEfectiva {
+    // Priorizar tracking local sobre BD
+    if (item.localDtiempofin != null) {
+      return item.localDtiempofin;
+    }
+    // Fallback a BD
+    if (actividad.dtiempofin != null) {
+      return DateTime.fromMillisecondsSinceEpoch(actividad.dtiempofin!);
+    }
+    return null;
   }
 
   /// Getters para condiciones de visualización
@@ -116,9 +148,11 @@ class ActividadConOtCard extends StatelessWidget {
 
   bool get _esFallaReportada => actividad.bfallareportada == true;
 
-  bool get _mostrarHoraInicio => actividad.dtiempoinicio != null;
+  /// Muestra hora de inicio si hay tracking local O dato en BD
+  bool get _mostrarHoraInicio => _horaInicioEfectiva != null;
 
-  bool get _mostrarHoraFin => actividad.dtiempofin != null;
+  /// Muestra hora de fin si hay tracking local finalizado O dato en BD
+  bool get _mostrarHoraFin => _horaFinEfectiva != null;
 
   bool get _mostrarTiempo =>
       _minutosEstimados != null && _estado == EstadoActividadCard.enProceso;
@@ -153,7 +187,7 @@ class ActividadConOtCard extends StatelessWidget {
 
               const SizedBox(height: 8),
 
-              // 1. Header: Título + Fecha
+              // 1. Header: Solo título de la actividad
               _buildHeader(),
 
               const SizedBox(height: 8),
@@ -172,25 +206,19 @@ class ActividadConOtCard extends StatelessWidget {
                 const SizedBox(height: 6),
               ],
 
-              // 4. Tiempo trabajado (si aplica)
-              if (_mostrarTiempo) ...[
-                _buildTiempoTrabajado(),
-                const SizedBox(height: 6),
-              ],
-
-              // 5. Sistema/Subsistema (si existe)
+              // 4. Sistema/Subsistema (si existe)
               if (_tieneSistema) ...[
                 _buildSistemaSubsistema(),
                 const SizedBox(height: 6),
               ],
 
-              // 6. Badge Falla Reportada (si aplica)
+              // 5. Badge Falla Reportada (si aplica)
               if (_esFallaReportada) ...[
                 _buildBadgeFalla(),
                 const SizedBox(height: 6),
               ],
 
-              // 7. Hora inicio + Chevron
+              // 6. Footer compacto: Fecha + Hora Inicio + Hora Fin + Minutos + Chevron
               _buildFooter(config),
             ],
           ),
@@ -284,25 +312,17 @@ class ActividadConOtCard extends StatelessWidget {
     );
   }
 
-  /// Formatea fecha de milisegundos a String "DD/MM/YYYY"
-  String _formatearFechaOt(int? millis) {
-    if (millis == null) return 'Sin fecha';
-    final fecha = DateTime.fromMillisecondsSinceEpoch(millis);
-    String dosDigitos(int n) => n.toString().padLeft(2, '0');
-    return '${dosDigitos(fecha.day)}/${dosDigitos(fecha.month)}/${fecha.year}';
-  }
-
-  /// Calcula el color de la fecha según antigüedad
-  /// - Normal (AppColors.primary): Hoy o ayer
-  /// - Advertencia (AppColors.warning): Más de 1 día de antigüedad
+  /// Calcula el color de la fecha de asignación según antigüedad
+  /// - Azul (AppColors.primary): Asignada hoy o ayer
+  /// - Naranja (AppColors.warning): Asignada hace más de 1 día (tarea antigua pendiente)
   Color _calcularColorFecha(int? millis) {
     if (millis == null) return AppColors.textSecondary;
 
-    final fechaOt = DateTime.fromMillisecondsSinceEpoch(millis);
+    final fechaAsignacion = DateTime.fromMillisecondsSinceEpoch(millis);
     final hoy = DateTime.now();
-    final diferenciaDias = hoy.difference(fechaOt).inDays;
+    final diferenciaDias = hoy.difference(fechaAsignacion).inDays;
 
-    // Si tiene más de 1 día → naranja (advertencia)
+    // Si tiene más de 1 día → naranja (advertencia: tarea antigua pendiente)
     if (diferenciaDias > 1) {
       return AppColors.warning; // Naranja
     }
@@ -311,50 +331,18 @@ class ActividadConOtCard extends StatelessWidget {
     return AppColors.primary;
   }
 
-  /// Header: Título (izq) + Fecha (der)
+  /// Header: Solo título de la actividad
+  /// La fecha se movió al footer para mejor uso del espacio
   Widget _buildHeader() {
-    final fechaOt = _formatearFechaOt(ot.dfecha);
-    final colorFecha = _calcularColorFecha(ot.dfecha);
-
-    return Row(
-      children: [
-        // Título de la actividad (izquierda)
-        Expanded(
-          child: Text(
-            actividad.cactividad ?? 'Sin descripción',
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: AppColors.textPrimary,
-            ),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-
-        const SizedBox(width: 12),
-
-        // Fecha de la OT (derecha)
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.calendar_today,
-              size: 14,
-              color: colorFecha,
-            ),
-            const SizedBox(width: 4),
-            Text(
-              fechaOt,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: colorFecha,
-              ),
-            ),
-          ],
-        ),
-      ],
+    return Text(
+      actividad.cactividad ?? 'Sin descripción',
+      style: const TextStyle(
+        fontSize: 18,
+        fontWeight: FontWeight.bold,
+        color: AppColors.textPrimary,
+      ),
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
     );
   }
 
@@ -407,28 +395,6 @@ class ActividadConOtCard extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-
-  /// Tiempo trabajado
-  Widget _buildTiempoTrabajado() {
-    return Row(
-      children: [
-        const Icon(
-          Icons.access_time,
-          size: 16,
-          color: AppColors.textSecondary,
-        ),
-        const SizedBox(width: 6),
-        Text(
-          _formatearMinutos(_minutosEstimados!),
-          style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: AppColors.textSecondary,
-          ),
-        ),
-      ],
     );
   }
 
@@ -490,65 +456,114 @@ class ActividadConOtCard extends StatelessWidget {
     );
   }
 
-  /// Footer: Horas (inicio y/o fin) + Chevron
+  /// Footer compacto: [Fecha] [Hora Inicio] [Hora Fin] [Minutos] + Chevron
+  /// Todos los elementos temporales en una sola fila para mejor uso del espacio
   Widget _buildFooter(_ConfigEstado config) {
+    final colorFecha = _calcularColorFecha(actividad.dfecreg);
+    final hayFecha = actividad.dfecreg != null;
+    final hayMinutos = _mostrarTiempo && _minutosEstimados != null;
+
     return Row(
       children: [
-        // Horas de inicio y fin
-        if (_mostrarHoraInicio || _mostrarHoraFin)
-          Expanded(
-            child: Wrap(
-              spacing: 12,
-              runSpacing: 4,
-              children: [
-                // Hora de inicio
-                if (_mostrarHoraInicio)
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.access_time_filled,
-                        size: 16,
+        // Contenedor de elementos temporales
+        Expanded(
+          child: Wrap(
+            spacing: 16,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              // 1. Fecha de asignación (DD/MM)
+              if (hayFecha)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.calendar_today,
+                      size: 14,
+                      color: colorFecha,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      _formatearFechaCompacta(actividad.dfecreg),
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: colorFecha,
+                      ),
+                    ),
+                  ],
+                ),
+
+              // 2. Hora de inicio
+              if (_mostrarHoraInicio)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.play_circle_outline,
+                      size: 14,
+                      color: AppColors.success,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      _formatearHoraCompacta(_horaInicioEfectiva),
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.success,
+                      ),
+                    ),
+                  ],
+                ),
+
+              // 3. Hora de fin
+              if (_mostrarHoraFin)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.stop_circle_outlined,
+                      size: 14,
+                      color: AppColors.textSecondary,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      _formatearHoraCompacta(_horaFinEfectiva),
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
                         color: AppColors.textSecondary,
                       ),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Inicio: ${_formatearHoraInicio(actividad.dtiempoinicio)}',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
+                ),
 
-                // Hora de fin
-                if (_mostrarHoraFin)
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.access_time,
-                        size: 16,
-                        color: AppColors.textSecondary,
+              // 4. Minutos trabajados (solo si está en proceso)
+              if (hayMinutos)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.timer_outlined,
+                      size: 14,
+                      color: AppColors.primary,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      _formatearMinutosCompacto(_minutosEstimados!),
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.primary,
                       ),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Fin: ${_formatearHoraInicio(actividad.dtiempofin)}',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-              ],
-            ),
-          )
-        else
-          const Spacer(),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        ),
 
-        // Chevron
+        // Chevron (siempre presente)
         const Icon(
           Icons.chevron_right,
           color: AppColors.primary,

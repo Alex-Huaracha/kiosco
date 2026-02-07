@@ -8,7 +8,9 @@ import 'package:hgtrack/features/authentication/data/models/empleado.dart';
 import 'package:hgtrack/features/authentication/data/models/empleado_con_actividades.dart';
 import 'package:hgtrack/features/authentication/presentation/widgets/empleado_avatar.dart';
 import 'package:hgtrack/features/time_tracking/data/models/pending_sync_activity.dart';
+import 'package:hgtrack/features/time_tracking/data/services/local_storage_service.dart';
 import 'package:hgtrack/features/time_tracking/data/services/pending_sync_service.dart';
+import 'package:hgtrack/features/time_tracking/domain/tracking_state.dart';
 import 'package:hgtrack/features/time_tracking/presentation/pages/activity_detail_page.dart';
 import 'package:hgtrack/features/time_tracking/presentation/widgets/actividad_con_ot_model.dart';
 import 'package:hgtrack/features/time_tracking/presentation/widgets/activity_card.dart';
@@ -155,6 +157,7 @@ class _ActivitiesListPageState
   /// Procesa las actividades ya cargadas desde EmpleadoConActividades
   /// Convierte ActividadEmpleadoDto a ActividadConOt y separa normales de backlog
   /// Filtra actividades que ya fueron finalizadas y están en cola de sync
+  /// Enriquece con datos locales de SharedPreferences para mostrar horas de inicio
   Future<void> _processActividades() async {
     final actividades = widget.empleadoConActividades.actividades;
 
@@ -170,6 +173,9 @@ class _ActivitiesListPageState
     final pendingService = PendingSyncService();
     final pendingActivityIds = await pendingService.getPendingActivityIds();
     final pendingAsignacionIds = await pendingService.getPendingAsignacionIds();
+
+    // Servicio para cargar estados locales de tracking
+    final localStorageService = ActividadLocalStorageService();
 
     // Convertir ActividadEmpleadoDto a ActividadConOt
     List<ActividadConOt> todasActividades = [];
@@ -195,6 +201,9 @@ class _ActivitiesListPageState
         return !pendingActivityIds.contains(item.actividad.id);
       }
     }).toList();
+
+    // Enriquecer con datos locales de SharedPreferences
+    await _enriquecerConDatosLocales(todasActividades, localStorageService);
 
     // Filtrar solo actividades activas (no cerradas, incluye backlog)
     List<ActividadConOt> actividadesActivas = todasActividades.where((item) {
@@ -229,11 +238,51 @@ class _ActivitiesListPageState
     });
   }
 
+  /// Enriquece las actividades con datos locales de SharedPreferences
+  /// Esto permite mostrar la hora de inicio en el card mientras la actividad
+  /// está en proceso pero aún no se ha enviado al backend.
+  Future<void> _enriquecerConDatosLocales(
+    List<ActividadConOt> actividades,
+    ActividadLocalStorageService storageService,
+  ) async {
+    for (var item in actividades) {
+      final actividadId = item.actividad.id;
+      if (actividadId == null) continue;
+
+      try {
+        // Intentar cargar estado local de tracking
+        final trackingState = await storageService.loadState(actividadId);
+
+        if (trackingState != null && trackingState.periodos.isNotEmpty) {
+          // Tiene tracking local activo
+          item.tieneTrackingLocal = true;
+
+          // Obtener fecha/hora de inicio del primer periodo
+          item.localDtiempoinicio = trackingState.periodos.first.inicio;
+
+          // Extraer tiempo ya calculado (no recalcular)
+          item.localMinutosTrabajados = trackingState.tiempoTotalTrabajado.inMinutes;
+
+          // Si está finalizada localmente, obtener fecha/hora de fin
+          if (trackingState.estado == EstadoActividad.finalizada) {
+            final ultimoPeriodo = trackingState.periodos.last;
+            if (ultimoPeriodo.fin != null) {
+              item.localDtiempofin = ultimoPeriodo.fin;
+            }
+          }
+        }
+      } catch (e) {
+        // Error al cargar estado local, continuar sin enriquecer
+        print('Error al cargar estado local para actividad $actividadId: $e');
+      }
+    }
+  }
+
   /// Ordena actividades por prioridad:
   /// 1. Actividades normales (no backlog) primero
   /// 2. Backlog al final
   /// Dentro de cada grupo:
-  ///   - En Proceso primero
+  ///   - En Proceso primero (considera tracking local)
   ///   - No Iniciadas segundo
   ///   - Por fecha mas reciente
   void _ordenarActividades(List<ActividadConOt> actividades) {
@@ -244,17 +293,18 @@ class _ActivitiesListPageState
       if (aBacklog && !bBacklog) return 1; // a es backlog, va al final
       if (!aBacklog && bBacklog) return -1; // b es backlog, va al final
 
-      // Prioridad 1: En proceso (iniciada pero no finalizada)
-      bool aEnProceso =
-          a.actividad.dtiempoinicio != null && a.actividad.dtiempofin == null;
-      bool bEnProceso =
-          b.actividad.dtiempoinicio != null && b.actividad.dtiempofin == null;
+      // Prioridad 1: En proceso (considera tanto BD como tracking local)
+      // Una actividad está en proceso si:
+      // - Tiene dtiempoinicio en BD y no tiene dtiempofin, O
+      // - Tiene tracking local activo (localDtiempoinicio != null)
+      bool aEnProceso = _estaEnProceso(a);
+      bool bEnProceso = _estaEnProceso(b);
       if (aEnProceso && !bEnProceso) return -1;
       if (!aEnProceso && bEnProceso) return 1;
 
-      // Prioridad 2: No iniciadas (pendientes sin tiempo inicio)
-      bool aNoIniciada = a.actividad.dtiempoinicio == null;
-      bool bNoIniciada = b.actividad.dtiempoinicio == null;
+      // Prioridad 2: No iniciadas (pendientes sin tiempo inicio ni tracking local)
+      bool aNoIniciada = _noIniciada(a);
+      bool bNoIniciada = _noIniciada(b);
       if (aNoIniciada && !bNoIniciada) return -1;
       if (!aNoIniciada && bNoIniciada) return 1;
 
@@ -263,6 +313,26 @@ class _ActivitiesListPageState
       int fechaB = b.actividad.dfecreg ?? 0;
       return fechaB.compareTo(fechaA);
     });
+  }
+
+  /// Verifica si una actividad está en proceso
+  /// Considera tanto datos de BD como tracking local
+  bool _estaEnProceso(ActividadConOt item) {
+    // Si tiene tracking local, está en proceso
+    if (item.tieneTrackingLocal && item.localDtiempoinicio != null) {
+      return true;
+    }
+    // Si tiene inicio en BD pero no fin, está en proceso
+    return item.actividad.dtiempoinicio != null && 
+           item.actividad.dtiempofin == null;
+  }
+
+  /// Verifica si una actividad no ha sido iniciada
+  /// Considera tanto datos de BD como tracking local
+  bool _noIniciada(ActividadConOt item) {
+    // No iniciada si no tiene tracking local NI inicio en BD
+    return !item.tieneTrackingLocal && 
+           item.actividad.dtiempoinicio == null;
   }
 
   @override

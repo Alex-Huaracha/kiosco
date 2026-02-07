@@ -8,6 +8,9 @@ import 'package:hgtrack/features/time_tracking/data/models/orden_trabajo.dart';
 /// facilitando el paso de datos entre pantallas y widgets.
 /// 
 /// Ahora soporta tanto Tareas Principales (TP) como Sub-Tareas (ST).
+/// 
+/// Incluye campos locales para enriquecer la UI con datos de SharedPreferences
+/// cuando la actividad está en progreso pero aún no se ha enviado al backend.
 class ActividadConOt {
   final HgDetalleOrdenTrabajoDto actividad;
   final HgOrdenTrabajoDto ordentrabajo;
@@ -16,10 +19,32 @@ class ActividadConOt {
   /// Solo disponible cuando se construye desde ActividadEmpleadoDto
   final ActividadEmpleadoDto? actividadDto;
 
+  /// Fecha/hora de inicio desde estado local (SharedPreferences)
+  /// Se usa para mostrar en el card cuando la actividad está en proceso
+  /// pero aún no se ha finalizado/enviado al backend.
+  /// Tiene prioridad sobre actividad.dtiempoinicio para visualización.
+  DateTime? localDtiempoinicio;
+
+  /// Fecha/hora de fin desde estado local (SharedPreferences)
+  /// Solo se llena cuando la actividad fue finalizada localmente
+  /// pero aún no se ha sincronizado con el backend.
+  DateTime? localDtiempofin;
+
+  /// Minutos trabajados desde tracking local (ya calculado en ActividadTrackingState)
+  /// Solo almacena el resultado, no recalcula
+  int? localMinutosTrabajados;
+
+  /// Indica si hay un estado de tracking activo en SharedPreferences
+  bool tieneTrackingLocal;
+
   ActividadConOt({
     required this.actividad,
     required this.ordentrabajo,
     this.actividadDto,
+    this.localDtiempoinicio,
+    this.localDtiempofin,
+    this.localMinutosTrabajados,
+    this.tieneTrackingLocal = false,
   });
 
   /// Verifica si es una Sub-Tarea (asistencia)
