@@ -2,8 +2,21 @@ import 'dart:convert';
 
 /// Modelo para actividades finalizadas pendientes de sincronización con el backend
 /// Se guarda en SharedPreferences cuando falla el envío al servidor
+/// 
+/// Soporta tanto Tareas Principales (TP) como Sub-Tareas (ST):
+/// - TP: usa idActividad (idDetalle) con endpoint /updatedetalleordentrabajo
+/// - ST: usa idAsignacion con endpoint /adddetalleasignacion
 class PendingSyncActivity {
+  /// Tipo de actividad: "TP" (Tarea Principal) o "ST" (Sub-Tarea)
+  /// Default: "TP" para compatibilidad con datos antiguos
+  final String tipo;
+  
+  /// ID del detalle de orden de trabajo (usado para TP)
   final int idActividad;
+  
+  /// ID de la asignación (usado para ST, null para TP)
+  final int? idAsignacion;
+  
   final int idEmpleado;
   final String nombreActividad;
   final String nombreEmpleado;
@@ -16,7 +29,9 @@ class PendingSyncActivity {
   final int retryCount; // Contador de intentos fallidos
 
   PendingSyncActivity({
+    this.tipo = "TP", // Default para compatibilidad
     required this.idActividad,
+    this.idAsignacion,
     required this.idEmpleado,
     required this.nombreActividad,
     required this.nombreEmpleado,
@@ -29,10 +44,18 @@ class PendingSyncActivity {
     this.retryCount = 0,
   });
 
+  /// Verifica si es una Sub-Tarea
+  bool get esSubTarea => tipo == "ST";
+
+  /// Verifica si es una Tarea Principal
+  bool get esTareaPrincipal => tipo == "TP" || tipo.isEmpty;
+
   /// Serialización a JSON para SharedPreferences
   Map<String, dynamic> toJson() {
     return {
+      'tipo': tipo,
       'idActividad': idActividad,
+      'idAsignacion': idAsignacion,
       'idEmpleado': idEmpleado,
       'nombreActividad': nombreActividad,
       'nombreEmpleado': nombreEmpleado,
@@ -49,7 +72,9 @@ class PendingSyncActivity {
   /// Deserialización desde JSON
   factory PendingSyncActivity.fromJson(Map<String, dynamic> json) {
     return PendingSyncActivity(
+      tipo: json['tipo'] as String? ?? "TP", // Default para datos antiguos
       idActividad: json['idActividad'] as int,
+      idAsignacion: json['idAsignacion'] as int?,
       idEmpleado: json['idEmpleado'] as int,
       nombreActividad: json['nombreActividad'] as String,
       nombreEmpleado: json['nombreEmpleado'] as String,
@@ -72,7 +97,9 @@ class PendingSyncActivity {
   /// Crea una copia con el contador de reintentos incrementado
   PendingSyncActivity incrementRetry() {
     return PendingSyncActivity(
+      tipo: tipo,
       idActividad: idActividad,
+      idAsignacion: idAsignacion,
       idEmpleado: idEmpleado,
       nombreActividad: nombreActividad,
       nombreEmpleado: nombreEmpleado,

@@ -98,7 +98,19 @@ class TrackingApi {
     return null;
   }
 
-  /// Finaliza una actividad de empleado enviando tiempos y observaciones al backend.
+  /// Formatea fechas segun documentacion: yyyy-MM-dd HH:mm:ss.SSS
+  String _formatFecha(DateTime fecha) {
+    final year = fecha.year.toString().padLeft(4, '0');
+    final month = fecha.month.toString().padLeft(2, '0');
+    final day = fecha.day.toString().padLeft(2, '0');
+    final hour = fecha.hour.toString().padLeft(2, '0');
+    final minute = fecha.minute.toString().padLeft(2, '0');
+    final second = fecha.second.toString().padLeft(2, '0');
+    final millisecond = fecha.millisecond.toString().padLeft(3, '0');
+    return '$year-$month-$day $hour:$minute:$second.$millisecond';
+  }
+
+  /// Finaliza una Tarea Principal (TP) enviando tiempos y observaciones al backend.
   /// 
   /// [idDetalleOrdenTrabajo] - ID del detalle de orden de trabajo
   /// [idEmpleadoExt] - ID externo del empleado
@@ -124,25 +136,13 @@ class TrackingApi {
     var url = '$_hgapiEndpoint/updatedetalleordentrabajo';
     var uri = Uri.parse(url);
 
-    // Formatear fechas segun documentacion: yyyy-MM-dd HH:mm:ss.SSS
-    String formatFecha(DateTime fecha) {
-      final year = fecha.year.toString().padLeft(4, '0');
-      final month = fecha.month.toString().padLeft(2, '0');
-      final day = fecha.day.toString().padLeft(2, '0');
-      final hour = fecha.hour.toString().padLeft(2, '0');
-      final minute = fecha.minute.toString().padLeft(2, '0');
-      final second = fecha.second.toString().padLeft(2, '0');
-      final millisecond = fecha.millisecond.toString().padLeft(3, '0');
-      return '$year-$month-$day $hour:$minute:$second.$millisecond';
-    }
-
     String jsonBody = jsonEncode({
       "iddetalleordentrabajo": idDetalleOrdenTrabajo.toString(),
       "idempleadoext": idEmpleadoExt,
       "ccargoemp": cargoEmpleado,
       "cnombreemp": nombreEmpleado,
-      "dtiempoinicio": formatFecha(tiempoInicio),
-      "dtiempofin": formatFecha(tiempoFin),
+      "dtiempoinicio": _formatFecha(tiempoInicio),
+      "dtiempofin": _formatFecha(tiempoFin),
       "nminutosemp": minutosEmpleado.toString(),
       "cobservaciones": observaciones ?? "",
       "bcerrada": "1",
@@ -156,20 +156,71 @@ class TrackingApi {
       );
 
       if (response.statusCode == 200) {
-        print("Actividad finalizada exitosamente");
+        print("Actividad TP finalizada exitosamente");
 
         // Parsear respuesta a DTO
         final jsonResponse =
             jsonDecode(const Utf8Decoder().convert(response.bodyBytes));
         return HgDetalleOrdenTrabajoDto.fromJson(jsonResponse);
       } else {
-        print("Error al finalizar actividad: Codigo ${response.statusCode}");
+        print("Error al finalizar actividad TP: Codigo ${response.statusCode}");
         print("Mensaje: ${response.body}");
         return null;
       }
     } catch (e) {
-      print("Excepcion al finalizar actividad: $e");
+      print("Excepcion al finalizar actividad TP: $e");
       return null;
+    }
+  }
+
+  /// Finaliza una Sub-Tarea (ST) enviando tiempos al backend.
+  /// Usa el endpoint /adddetalleasignacion con el idAsignacion.
+  /// 
+  /// [idAsignacion] - ID de la asignacion (DetalleAsignacion)
+  /// [tiempoInicio] - Fecha/hora de inicio del trabajo
+  /// [tiempoFin] - Fecha/hora de fin del trabajo
+  /// [minutosEmpleado] - Total de minutos trabajados (calculado por Flutter)
+  /// [observaciones] - Observaciones opcionales
+  /// 
+  /// Retorna true en caso de exito, false en caso de error
+  Future<bool> finalizarAsignacion({
+    required int idAsignacion,
+    required DateTime tiempoInicio,
+    required DateTime tiempoFin,
+    required int minutosEmpleado,
+    String? observaciones,
+  }) async {
+    var client = http.Client();
+    var url = '$_hgapiEndpoint/adddetalleasignacion';
+    var uri = Uri.parse(url);
+
+    String jsonBody = jsonEncode({
+      "id": idAsignacion.toString(),
+      "dtiempoinicio": _formatFecha(tiempoInicio),
+      "dtiempofin": _formatFecha(tiempoFin),
+      "nminutosemp": minutosEmpleado.toString(),
+      "cobservaciones": observaciones ?? "",
+      "bcerrada": "1",
+    });
+
+    try {
+      var response = await client.post(
+        uri,
+        headers: {"Content-Type": "application/json"},
+        body: jsonBody,
+      );
+
+      if (response.statusCode == 200) {
+        print("Sub-Tarea ST finalizada exitosamente (idAsignacion: $idAsignacion)");
+        return true;
+      } else {
+        print("Error al finalizar Sub-Tarea ST: Codigo ${response.statusCode}");
+        print("Mensaje: ${response.body}");
+        return false;
+      }
+    } catch (e) {
+      print("Excepcion al finalizar Sub-Tarea ST: $e");
+      return false;
     }
   }
 }

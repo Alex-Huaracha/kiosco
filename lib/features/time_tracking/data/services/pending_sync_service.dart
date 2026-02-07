@@ -1,26 +1,33 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:hgtrack/core/network/api_client.dart';
 import 'package:hgtrack/features/authentication/data/models/empleado.dart';
 import 'package:hgtrack/features/time_tracking/data/models/detalle_orden_trabajo.dart';
 import 'package:hgtrack/features/time_tracking/data/models/pending_sync_activity.dart';
 import 'package:hgtrack/features/time_tracking/data/services/activity_service.dart';
 
 /// Servicio para gestionar cola de actividades finalizadas pendientes de sincronización
-/// Almacena en SharedPreferences actividades que fallaron al enviarse al backend
+/// Almacena en SharedPreferences actividades que fallaron al enviarse al backend.
+/// 
+/// Soporta tanto Tareas Principales (TP) como Sub-Tareas (ST):
+/// - TP: usa /updatedetalleordentrabajo
+/// - ST: usa /adddetalleasignacion
 class PendingSyncService {
   static const String _keyPrefix = 'pending_sync_';
   static const int maxRetries = 5;
 
-  /// Agrega una actividad a la cola de pendientes
+  /// Agrega una actividad a la cola de pendientes.
+  /// Usa una key unica combinando tipo + id para evitar colisiones.
   Future<bool> addToPendingQueue(PendingSyncActivity activity) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final key = _buildKey(activity.idActividad);
+      final key = _buildKey(activity);
       final jsonString = activity.toJsonString();
       final success = await prefs.setString(key, jsonString);
 
       if (success) {
-        print('✓ Actividad ${activity.idActividad} agregada a cola de pendientes');
+        final tipoLabel = activity.esSubTarea ? 'ST' : 'TP';
+        print('Actividad $tipoLabel ${activity.idActividad} agregada a cola de pendientes');
       }
 
       return success;
@@ -72,14 +79,31 @@ class PendingSyncService {
     }
   }
 
-  /// Verifica si existe una actividad específica en la cola de pendientes
-  Future<bool> hasPendingActivity(int? idActividad) async {
-    if (idActividad == null) return false;
-
+  /// Verifica si existe una actividad específica en la cola de pendientes.
+  /// Busca por idActividad (TP) o idAsignacion (ST).
+  Future<bool> hasPendingActivity({
+    int? idActividad,
+    int? idAsignacion,
+    String tipo = "TP",
+  }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final key = _buildKey(idActividad);
-      return prefs.containsKey(key);
+      
+      if (tipo == "ST" && idAsignacion != null) {
+        // Buscar ST por idAsignacion
+        final key = '${_keyPrefix}ST_$idAsignacion';
+        return prefs.containsKey(key);
+      } else if (idActividad != null) {
+        // Buscar TP por idActividad
+        final key = '${_keyPrefix}TP_$idActividad';
+        if (prefs.containsKey(key)) return true;
+        
+        // Compatibilidad con datos antiguos (sin prefijo de tipo)
+        final keyLegacy = '${_keyPrefix}$idActividad';
+        return prefs.containsKey(keyLegacy);
+      }
+      
+      return false;
     } catch (e) {
       print('Error al verificar actividad pendiente: $e');
       return false;
@@ -88,56 +112,92 @@ class PendingSyncService {
 
   /// Intenta sincronizar una actividad específica con el backend.
   /// Respeta el limite de reintentos (maxRetries).
+  /// Detecta automaticamente si es TP o ST y usa el endpoint correcto.
   Future<bool> syncActivity(PendingSyncActivity activity) async {
     // Verificar limite de reintentos
     if (activity.retryCount >= maxRetries) {
-      print('Actividad ${activity.idActividad} excede el limite de reintentos ($maxRetries). Requiere atencion manual.');
+      final tipoLabel = activity.esSubTarea ? 'ST' : 'TP';
+      print('Actividad $tipoLabel ${activity.idActividad} excede el limite de reintentos ($maxRetries). Requiere atencion manual.');
       return false;
     }
 
     try {
-      print('Intentando sincronizar actividad ${activity.idActividad} (intento ${activity.retryCount + 1}/$maxRetries)...');
+      final tipoLabel = activity.esSubTarea ? 'ST' : 'TP';
+      print('Intentando sincronizar actividad $tipoLabel ${activity.idActividad} (intento ${activity.retryCount + 1}/$maxRetries)...');
 
-      final service = ActivityService();
+      bool success = false;
 
-      // Crear DTOs necesarios para el servicio
-      final actividadDto = HgDetalleOrdenTrabajoDto(
-        id: activity.idActividad,
-        cactividad: activity.nombreActividad,
-      );
+      if (activity.esSubTarea) {
+        // Sub-Tarea (ST) - usar endpoint de asignacion
+        success = await _syncSubTarea(activity);
+      } else {
+        // Tarea Principal (TP) - usar endpoint de detalle
+        success = await _syncTareaPrincipal(activity);
+      }
 
-      final empleadoDto = HgEmpleadoMantenimientoDto(
-        id: activity.idEmpleado,
-        nombres: activity.nombreEmpleado,
-        cargo: activity.cargoEmpleado,
-      );
-
-      // Intentar enviar al backend
-      final resultado = await service.finalizarActividad(
-        actividad: actividadDto,
-        empleado: empleadoDto,
-        tiempoInicio: activity.fechaInicio,
-        tiempoFin: activity.fechaFin,
-        minutosEmpleado: activity.minutosTotal,
-        observaciones: activity.observaciones ?? '',
-      );
-
-      if (resultado != null) {
-        // ✅ Sincronización exitosa
-        print('✓ Actividad ${activity.idActividad} sincronizada correctamente');
-        await removeFromQueue(activity.idActividad);
+      if (success) {
+        // Sincronizacion exitosa
+        print('Actividad $tipoLabel ${activity.idActividad} sincronizada correctamente');
+        await removeFromQueue(activity);
         return true;
       } else {
-        // ❌ Falló la sincronización
-        print('✗ Falló sincronización de actividad ${activity.idActividad}');
-        await incrementRetryCount(activity.idActividad);
+        // Fallo la sincronizacion
+        print('Fallo sincronizacion de actividad $tipoLabel ${activity.idActividad}');
+        await incrementRetryCount(activity);
         return false;
       }
     } catch (e) {
       print('Error al sincronizar actividad ${activity.idActividad}: $e');
-      await incrementRetryCount(activity.idActividad);
+      await incrementRetryCount(activity);
       return false;
     }
+  }
+
+  /// Sincroniza una Tarea Principal (TP) usando /updatedetalleordentrabajo
+  Future<bool> _syncTareaPrincipal(PendingSyncActivity activity) async {
+    final service = ActivityService();
+
+    // Crear DTOs necesarios para el servicio
+    final actividadDto = HgDetalleOrdenTrabajoDto(
+      id: activity.idActividad,
+      cactividad: activity.nombreActividad,
+    );
+
+    final empleadoDto = HgEmpleadoMantenimientoDto(
+      id: activity.idEmpleado,
+      nombres: activity.nombreEmpleado,
+      cargo: activity.cargoEmpleado,
+    );
+
+    // Intentar enviar al backend
+    final resultado = await service.finalizarActividad(
+      actividad: actividadDto,
+      empleado: empleadoDto,
+      tiempoInicio: activity.fechaInicio,
+      tiempoFin: activity.fechaFin,
+      minutosEmpleado: activity.minutosTotal,
+      observaciones: activity.observaciones ?? '',
+    );
+
+    return resultado != null;
+  }
+
+  /// Sincroniza una Sub-Tarea (ST) usando /adddetalleasignacion
+  Future<bool> _syncSubTarea(PendingSyncActivity activity) async {
+    if (activity.idAsignacion == null) {
+      print('Error: idAsignacion es null para Sub-Tarea ${activity.idActividad}');
+      return false;
+    }
+
+    final api = TrackingApi();
+
+    return await api.finalizarAsignacion(
+      idAsignacion: activity.idAsignacion!,
+      tiempoInicio: activity.fechaInicio,
+      tiempoFin: activity.fechaFin,
+      minutosEmpleado: activity.minutosTotal,
+      observaciones: activity.observaciones,
+    );
   }
 
   /// Intenta sincronizar todas las actividades pendientes
@@ -190,10 +250,10 @@ class PendingSyncService {
   }
 
   /// Remueve una actividad de la cola (después de sincronización exitosa)
-  Future<bool> removeFromQueue(int idActividad) async {
+  Future<bool> removeFromQueue(PendingSyncActivity activity) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final key = _buildKey(idActividad);
+      final key = _buildKey(activity);
       return await prefs.remove(key);
     } catch (e) {
       print('Error al remover actividad de cola: $e');
@@ -202,19 +262,20 @@ class PendingSyncService {
   }
 
   /// Incrementa el contador de reintentos de una actividad
-  Future<void> incrementRetryCount(int idActividad) async {
+  Future<void> incrementRetryCount(PendingSyncActivity activity) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final key = _buildKey(idActividad);
+      final key = _buildKey(activity);
       final jsonString = prefs.getString(key);
 
       if (jsonString != null) {
-        final activity = PendingSyncActivity.fromJsonString(jsonString);
-        final updatedActivity = activity.incrementRetry();
+        final loadedActivity = PendingSyncActivity.fromJsonString(jsonString);
+        final updatedActivity = loadedActivity.incrementRetry();
         await prefs.setString(key, updatedActivity.toJsonString());
 
+        final tipoLabel = activity.esSubTarea ? 'ST' : 'TP';
         print(
-            'Intento ${updatedActivity.retryCount} para actividad $idActividad');
+            'Intento ${updatedActivity.retryCount} para actividad $tipoLabel ${activity.idActividad}');
       }
     } catch (e) {
       print('Error al incrementar contador de reintentos: $e');
@@ -239,8 +300,19 @@ class PendingSyncService {
     }
   }
 
-  /// Construye la clave de almacenamiento
-  String _buildKey(int idActividad) {
-    return '$_keyPrefix$idActividad';
+  /// Construye la clave de almacenamiento.
+  /// Formato: pending_sync_{tipo}_{id} para evitar colisiones entre TP y ST
+  String _buildKey(PendingSyncActivity activity) {
+    final tipo = activity.tipo;
+    // Para ST usamos idAsignacion, para TP usamos idActividad
+    final id = activity.esSubTarea 
+        ? activity.idAsignacion ?? activity.idActividad
+        : activity.idActividad;
+    return '$_keyPrefix${tipo}_$id';
+  }
+
+  /// Construye la clave usando solo el ID (para compatibilidad con datos antiguos)
+  String _buildKeyLegacy(int idActividad) {
+    return '${_keyPrefix}TP_$idActividad';
   }
 }
