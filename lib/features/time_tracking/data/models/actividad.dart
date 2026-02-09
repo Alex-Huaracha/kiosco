@@ -163,8 +163,13 @@ class ActividadEmpleadoDto {
 
   /// Obtiene el codigo formateado para mostrar
   /// Si no hay codigo, construye uno basado en el detalle
+  /// Para Sub-Tareas (ST), agrega un bullet • entre TP y ST para mejor legibilidad
   String get codigoDisplay {
     if (codigo != null && codigo!.isNotEmpty) {
+      // Si es Sub-Tarea y contiene espacio, agregar bullet entre TP y ST
+      if (esSubTarea && codigo!.contains(' ')) {
+        return codigo!.replaceFirst(' ', ' • ');  // "TP-123 ST-5" → "TP-123 • ST-5"
+      }
       return codigo!;
     }
     // Fallback para datos antiguos

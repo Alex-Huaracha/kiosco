@@ -157,12 +157,6 @@ class ActividadConOtCard extends StatelessWidget {
   bool get _mostrarTiempo =>
       _minutosEstimados != null && _estado == EstadoActividadCard.enProceso;
 
-  /// Verifica si debe mostrar info del empleado principal (solo para ST con empleado asignado)
-  bool get _mostrarEmpleadoPrincipal =>
-      _esSubTarea && 
-      item.empleadoPrincipal != null && 
-      !item.empleadoPrincipal!.sinAsignar;
-
   @override
   Widget build(BuildContext context) {
     final config = _config;
@@ -192,19 +186,18 @@ class ActividadConOtCard extends StatelessWidget {
 
               const SizedBox(height: 8),
 
-              // 2. Divider
+              // 2. Placa del vehículo
+              _buildPlacaVehiculo(),
+
+              const SizedBox(height: 8),
+
+              // 3. Divider
               const Divider(
                 color: AppColors.divider,
                 thickness: 1,
               ),
 
               const SizedBox(height: 8),
-
-              // 3. Empleado principal (solo para ST)
-              if (_mostrarEmpleadoPrincipal) ...[
-                _buildEmpleadoPrincipal(),
-                const SizedBox(height: 6),
-              ],
 
               // 4. Sistema/Subsistema (si existe)
               if (_tieneSistema) ...[
@@ -252,17 +245,17 @@ class ActividadConOtCard extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.max,
         children: [
-          // Icono: persona para ST, camion para TP
+          // Icono: construction para todos (representa trabajo/mantenimiento)
           Icon(
-            _esSubTarea ? Icons.person_outline : Icons.local_shipping,
+            Icons.construction,
             size: 16,
             color: iconColor,
           ),
           const SizedBox(width: 6),
-          // Placa + Codigo
+          // Codigo (sin placa)
           Expanded(
             child: Text(
-              '${ot.idplacatracto ?? "N/A"} • ${item.codigoDisplay}',
+              item.codigoDisplay,
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.bold,
@@ -272,19 +265,38 @@ class ActividadConOtCard extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          // Badge de tipo (solo para ST)
+          // Badge de tipo - Principal (solo para TP)
+          if (!_esSubTarea) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.primary,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Text(
+                'Principal',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
+          // Badge de tipo - Asistencia (solo para ST)
           if (_esSubTarea) ...[
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
                 color: AppColors.subtarea,
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(12),
               ),
               child: const Text(
                 'Asistencia',
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: 10,
+                  fontSize: 12,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -331,9 +343,25 @@ class ActividadConOtCard extends StatelessWidget {
     return AppColors.primary;
   }
 
-  /// Header: Solo título de la actividad
-  /// La fecha se movió al footer para mejor uso del espacio
+  /// Header: Título de la actividad
+  /// - Para TP: Muestra el título de la actividad principal
+  /// - Para ST: Muestra la sub-actividad específica (sin contexto de actividad principal)
   Widget _buildHeader() {
+    // Para Sub-Tareas (ST): Mostrar solo la sub-actividad
+    if (_esSubTarea && item.subActividad != null && item.subActividad!.isNotEmpty) {
+      return Text(
+        item.subActividad!,
+        style: const TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.bold,
+          color: AppColors.textPrimary,
+        ),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      );
+    }
+
+    // Para Tareas Principales (TP): Mostrar título normal
     return Text(
       actividad.cactividad ?? 'Sin descripción',
       style: const TextStyle(
@@ -346,55 +374,25 @@ class ActividadConOtCard extends StatelessWidget {
     );
   }
 
-  /// Info del empleado principal (solo para Sub-Tareas)
-  Widget _buildEmpleadoPrincipal() {
-    final empleado = item.empleadoPrincipal;
-    if (empleado == null) return const SizedBox.shrink();
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: AppColors.subtareaBackground,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(
-          color: AppColors.subtarea.withAlpha(51),
-          width: 1,
+  /// Muestra la placa del vehículo
+  Widget _buildPlacaVehiculo() {
+    return Row(
+      children: [
+        const Icon(
+          Icons.local_shipping,
+          size: 16,
+          color: AppColors.textSecondary,
         ),
-      ),
-      child: Row(
-        children: [
-          const Icon(
-            Icons.person,
-            size: 16,
-            color: AppColors.subtarea,
+        const SizedBox(width: 6),
+        Text(
+          ot.idplacatracto ?? 'N/A',
+          style: const TextStyle(
+            fontSize: 14,
+            color: AppColors.textSecondary,
+            fontWeight: FontWeight.w500,
           ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Responsable:',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-                Text(
-                  empleado.cnombreemp ?? 'Sin nombre',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.subtarea,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -456,12 +454,13 @@ class ActividadConOtCard extends StatelessWidget {
     );
   }
 
-  /// Footer compacto: [Fecha] [Hora Inicio] [Hora Fin] [Minutos] + Chevron
+  /// Footer compacto: [Fecha] [Hora Inicio] [Hora Fin] [Minutos] [Tiempo Estimado ST] + Chevron
   /// Todos los elementos temporales en una sola fila para mejor uso del espacio
   Widget _buildFooter(_ConfigEstado config) {
     final colorFecha = _calcularColorFecha(actividad.dfecreg);
     final hayFecha = actividad.dfecreg != null;
     final hayMinutos = _mostrarTiempo && _minutosEstimados != null;
+    final hayTiempoEstimado = _esSubTarea && item.tiempoEstimado != null;
 
     return Row(
       children: [
@@ -494,7 +493,29 @@ class ActividadConOtCard extends StatelessWidget {
                   ],
                 ),
 
-              // 2. Hora de inicio
+              // 2. Tiempo estimado (solo para ST antes de iniciar)
+              if (hayTiempoEstimado && !_mostrarHoraInicio)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.schedule,
+                      size: 14,
+                      color: AppColors.subtarea,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${_formatearMinutosCompacto(item.tiempoEstimado!)} est.',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.subtarea,
+                      ),
+                    ),
+                  ],
+                ),
+
+              // 3. Hora de inicio
               if (_mostrarHoraInicio)
                 Row(
                   mainAxisSize: MainAxisSize.min,
@@ -516,7 +537,7 @@ class ActividadConOtCard extends StatelessWidget {
                   ],
                 ),
 
-              // 3. Hora de fin
+              // 4. Hora de fin
               if (_mostrarHoraFin)
                 Row(
                   mainAxisSize: MainAxisSize.min,
@@ -538,7 +559,7 @@ class ActividadConOtCard extends StatelessWidget {
                   ],
                 ),
 
-              // 4. Minutos trabajados (solo si está en proceso)
+              // 5. Minutos trabajados (solo si está en proceso)
               if (hayMinutos)
                 Row(
                   mainAxisSize: MainAxisSize.min,
