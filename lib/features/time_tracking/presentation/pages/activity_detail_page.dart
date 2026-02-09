@@ -778,6 +778,7 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
             ActivityInfoCard(
               actividad: widget.actividad,
               empleado: widget.empleado,
+              actividadConOt: widget.actividadConOt,
             ),
             const SizedBox(height: 16),
 
@@ -841,6 +842,7 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
                       ActivityInfoCard(
                         actividad: widget.actividad,
                         empleado: widget.empleado,
+                        actividadConOt: widget.actividadConOt,
                       ),
                       const SizedBox(height: 16),
 
