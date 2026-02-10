@@ -12,7 +12,8 @@ import 'package:hgtrack/features/time_tracking/data/services/activity_service.da
 import 'package:hgtrack/features/time_tracking/data/services/local_storage_service.dart';
 import 'package:hgtrack/features/time_tracking/data/services/pending_sync_service.dart';
 import 'package:hgtrack/features/time_tracking/domain/tracking_state.dart';
-import 'package:hgtrack/features/time_tracking/presentation/widgets/actividad_con_ot_model.dart' hide EstadoActividadCard;
+import 'package:hgtrack/features/time_tracking/presentation/widgets/actividad_con_ot_model.dart'
+    hide EstadoActividadCard;
 import 'package:hgtrack/features/time_tracking/presentation/widgets/activity_info_card.dart';
 import 'package:hgtrack/features/time_tracking/presentation/widgets/current_state_card.dart';
 import 'package:hgtrack/features/time_tracking/presentation/widgets/observations_field.dart';
@@ -26,7 +27,7 @@ class ActivityDetailPage extends StatefulWidget {
   final HgDetalleOrdenTrabajoDto actividad;
   final HgOrdenTrabajoDto ordentrabajo;
   final HgEmpleadoMantenimientoDto empleado;
-  
+
   /// Información completa de la actividad (incluye tipo TP/ST, empleadoPrincipal, etc.)
   /// Puede ser null para compatibilidad con navegación directa sin el modelo completo
   final ActividadConOt? actividadConOt;
@@ -111,7 +112,7 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
   /// Inicia un timer de actualización si la actividad está en proceso
   void _startTimerIfNeeded() {
     _refreshTimer?.cancel();
-    
+
     if (_trackingState?.estado == EstadoActividad.enProceso) {
       _refreshTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
         if (_trackingState?.estado == EstadoActividad.enProceso) {
@@ -463,7 +464,7 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
         backgroundColor: AppColors.background,
         appBar: AppBar(
           title: Text(
-            widget.actividad.cactividad ?? 'Detalle de Actividad',
+            _obtenerTituloActividad(),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -478,7 +479,8 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
             Expanded(
               child: _isLoading
                   ? const Center(
-                      child: CircularProgressIndicator(color: AppColors.primary),
+                      child:
+                          CircularProgressIndicator(color: AppColors.primary),
                     )
                   : _isSaving
                       ? _buildSavingOverlay()
@@ -570,6 +572,21 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
       widget.actividadConOt?.empleadoPrincipal != null &&
       !widget.actividadConOt!.empleadoPrincipal!.sinAsignar;
 
+  /// Obtiene el título apropiado para el AppBar según el tipo de actividad
+  ///
+  /// - Para Sub-Tareas (ST): Muestra la sub-actividad específica del empleado
+  /// - Para Tareas Principales (TP): Muestra el nombre de la actividad principal
+  String _obtenerTituloActividad() {
+    // Si es sub-tarea y tiene sub-actividad específica, mostrarla
+    if (widget.actividadConOt?.esSubTarea == true &&
+        widget.actividadConOt?.subActividad != null) {
+      return widget.actividadConOt!.subActividad!;
+    }
+
+    // Tarea principal o fallback
+    return widget.actividad.cactividad ?? 'Detalle de Actividad';
+  }
+
   /// Card con información del empleado principal (solo para Sub-Tareas)
   Widget _buildEmpleadoPrincipalCard() {
     final empleado = widget.actividadConOt?.empleadoPrincipal;
@@ -594,7 +611,8 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
                     color: AppColors.subtarea,
                     borderRadius: BorderRadius.circular(8),
@@ -875,7 +893,8 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
                       if (_trackingState != null)
                         TimelineWidget(
                           periodos: _trackingState!.periodos,
-                          tiempoTotalTrabajado: _trackingState!.tiempoTotalTrabajado,
+                          tiempoTotalTrabajado:
+                              _trackingState!.tiempoTotalTrabajado,
                         ),
                     ],
                   ),
@@ -888,12 +907,6 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
       ),
     );
   }
-
-
-
-
-
-
 
   /// Card con acciones (botones)
   Widget _buildAccionesCard() {
@@ -959,17 +972,15 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
       case EstadoActividad.enProceso:
         return Row(
           children: [
-            // Botón Pausar (solo habilitado después de 5 minutos)
+            // Botón Pausar
             Expanded(
               child: ElevatedButton.icon(
-                onPressed: tieneMasDe5Minutos ? _onPausar : null,
+                onPressed: _onPausar,
                 icon: const Icon(Icons.pause),
                 label: const Text('Pausar'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.warning,
                   foregroundColor: Colors.white,
-                  disabledBackgroundColor: AppColors.textSecondary.withAlpha(128),
-                  disabledForegroundColor: Colors.white.withAlpha(179),
                   padding: const EdgeInsets.symmetric(vertical: 16),
                 ),
               ),
@@ -1048,14 +1059,6 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
         );
     }
   }
-
-
-
-
-
-
-
-
 
   /// Dialogs
   Future<bool?> _mostrarDialogConfirmacion({
