@@ -113,13 +113,6 @@ class ActividadTrackingState {
       throw StateError('No hay periodo actual para pausar');
     }
 
-    // Validar que tenga al menos 5 minutos de tiempo total trabajado
-    final tiempoTotal = tiempoTotalTrabajado;
-    if (tiempoTotal.inMinutes < 5) {
-      throw StateError(
-          'Debe trabajar al menos 5 minutos antes de poder pausar');
-    }
-
     final ahora = DateTime.now();
     final nuevoPeriodos = List<PeriodoTrabajo>.from(periodos);
 
