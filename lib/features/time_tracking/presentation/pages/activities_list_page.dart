@@ -39,11 +39,9 @@ class ActivitiesListPage extends StatefulWidget {
 class _ActivitiesListPageState
     extends State<ActivitiesListPage> {
   List<ActividadConOt>? actividadesPendientes;
-  List<ActividadConOt>? actividadesEnBacklog;
   bool isLoading = true;
   String? errorMessage;
   int _pendingSyncCount = 0;
-  bool _backlogExpanded = false;
 
   // Conectividad
   bool _isOnline = true;
@@ -218,23 +216,12 @@ class _ActivitiesListPageState
       return;
     }
 
-    // Separar en dos grupos: normales y backlog
-    List<ActividadConOt> actividadesNormales = actividadesActivas
-        .where((item) => item.actividad.bbacklog != true)
-        .toList();
-
-    List<ActividadConOt> actividadesBacklogList = actividadesActivas
-        .where((item) => item.actividad.bbacklog == true)
-        .toList();
-
-    // Ordenar cada grupo independientemente
-    _ordenarActividades(actividadesNormales);
-    _ordenarActividades(actividadesBacklogList);
+    // Ordenar todas las actividades (normales + backlog unificadas)
+    _ordenarActividades(actividadesActivas);
 
     setState(() {
       isLoading = false;
-      actividadesPendientes = actividadesNormales;
-      actividadesEnBacklog = actividadesBacklogList;
+      actividadesPendientes = actividadesActivas;
     });
   }
 
@@ -279,20 +266,13 @@ class _ActivitiesListPageState
   }
 
   /// Ordena actividades por prioridad:
-  /// 1. Actividades normales (no backlog) primero
-  /// 2. Backlog al final
-  /// Dentro de cada grupo:
-  ///   - En Proceso primero (considera tracking local)
-  ///   - No Iniciadas segundo
-  ///   - Por fecha mas reciente
+  /// 1. En Proceso primero (considera tracking local)
+  /// 2. No Iniciadas segundo
+  /// 3. Por fecha de registro (mas reciente primero)
+  /// 
+  /// Nota: Backlog ya NO se separa, se mezcla con actividades normales
   void _ordenarActividades(List<ActividadConOt> actividades) {
     actividades.sort((a, b) {
-      // Prioridad MAXIMA: Backlog siempre al final
-      bool aBacklog = a.actividad.bbacklog == true;
-      bool bBacklog = b.actividad.bbacklog == true;
-      if (aBacklog && !bBacklog) return 1; // a es backlog, va al final
-      if (!aBacklog && bBacklog) return -1; // b es backlog, va al final
-
       // Prioridad 1: En proceso (considera tanto BD como tracking local)
       // Una actividad está en proceso si:
       // - Tiene dtiempoinicio en BD y no tiene dtiempofin, O
@@ -489,7 +469,7 @@ class _ActivitiesListPageState
 
             const SizedBox(height: 12),
 
-            // Lista de actividades
+            // Lista de actividades (incluye backlog mezclado)
             ...actividadesPendientes!.map((item) {
               return Padding(
                 padding: const EdgeInsets.only(bottom: 12),
@@ -499,11 +479,6 @@ class _ActivitiesListPageState
                 ),
               );
             }),
-
-            const SizedBox(height: 24), // Espaciado antes de backlog
-
-            // Seccion de Backlog (colapsable)
-            _buildSeccionBacklog(),
 
             const SizedBox(height: 80), // Espacio final para scroll
           ],
@@ -596,103 +571,7 @@ class _ActivitiesListPageState
     );
   }
 
-  /// Seccion de Backlog (colapsable)
-  Widget _buildSeccionBacklog() {
-    if (actividadesEnBacklog == null || actividadesEnBacklog!.isEmpty) {
-      return const SizedBox.shrink(); // No mostrar si no hay backlog
-    }
 
-    final count = actividadesEnBacklog!.length;
-
-    return Column(
-      children: [
-        // Header clickeable
-        Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: () {
-              setState(() {
-                _backlogExpanded = !_backlogExpanded;
-              });
-            },
-            borderRadius: BorderRadius.circular(8),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: AppColors.warning.withAlpha(26),
-                border: Border.all(color: AppColors.warning, width: 1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.warning_amber_rounded,
-                    size: 24,
-                    color: AppColors.warning,
-                  ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Text(
-                      'Backlog',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.warning,
-                      ),
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: AppColors.warning,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      '$count',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Icon(
-                    _backlogExpanded ? Icons.expand_less : Icons.expand_more,
-                    size: 28,
-                    color: AppColors.warning,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-
-        // Lista expandible
-        AnimatedCrossFade(
-          duration: const Duration(milliseconds: 300),
-          crossFadeState: _backlogExpanded
-              ? CrossFadeState.showSecond
-              : CrossFadeState.showFirst,
-          firstChild: const SizedBox.shrink(), // Colapsado
-          secondChild: Column(
-            children: [
-              const SizedBox(height: 12),
-              ...actividadesEnBacklog!.map((item) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: ActividadConOtCard(
-                    item: item,
-                    onTap: () => _onActividadTapped(item),
-                  ),
-                );
-              }),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
 
   /// Callback al hacer tap en una actividad
   void _onActividadTapped(ActividadConOt item) async {
@@ -734,23 +613,13 @@ class _ActivitiesListPageState
           return item.actividad.id == actividadId;
         }
       });
-
-      // Remover de la lista de backlog (por si acaso)
-      actividadesEnBacklog?.removeWhere((item) {
-        if (esSubTarea) {
-          return item.idAsignacion == idAsignacion;
-        } else {
-          return item.actividad.id == actividadId;
-        }
-      });
     });
 
     // Actualizar contador de pendientes de sync
     _loadPendingCount();
 
     // Si no quedan actividades, volver a la pantalla de empleados
-    final totalActividades = (actividadesPendientes?.length ?? 0) + 
-                             (actividadesEnBacklog?.length ?? 0);
+    final totalActividades = actividadesPendientes?.length ?? 0;
     if (totalActividades == 0) {
       // Volver indicando que hubo cambios para que se recargue la lista de empleados
       Navigator.pop(context, true);

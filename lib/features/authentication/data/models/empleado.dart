@@ -27,16 +27,13 @@ class HgEmpleadoMantenimientoDto {
   String? sexo;
   int? activo;
   
-  /// Cantidad de Tareas Principales (TP) no backlog
+  /// Cantidad de Tareas Principales (TP) asignadas (incluye backlog)
   int? cantidadActividades;
-  
-  /// Cantidad de Tareas Principales en backlog
-  int? cantidadBacklog;
   
   /// Cantidad de Sub-Tareas (ST) donde el empleado es asistente
   int? cantidadAsistencias;
   
-  /// Total de todas las actividades (TP + ST + Backlog)
+  /// Total de todas las actividades (TP + ST)
   int? cantidadTotal;
 
   HgEmpleadoMantenimientoDto({
@@ -52,7 +49,6 @@ class HgEmpleadoMantenimientoDto {
     this.sexo,
     this.activo,
     this.cantidadActividades,
-    this.cantidadBacklog,
     this.cantidadAsistencias,
     this.cantidadTotal,
   });
@@ -71,7 +67,6 @@ class HgEmpleadoMantenimientoDto {
         sexo: json["sexo"],
         activo: json["activo"],
         cantidadActividades: json["cantidadActividades"],
-        cantidadBacklog: json["cantidadBacklog"],
         cantidadAsistencias: json["cantidadAsistencias"],
         cantidadTotal: json["cantidadTotal"],
       );
@@ -89,7 +84,6 @@ class HgEmpleadoMantenimientoDto {
         "sexo": sexo,
         "activo": activo,
         "cantidadActividades": cantidadActividades,
-        "cantidadBacklog": cantidadBacklog,
         "cantidadAsistencias": cantidadAsistencias,
         "cantidadTotal": cantidadTotal,
       };

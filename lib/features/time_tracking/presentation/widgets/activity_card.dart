@@ -33,12 +33,8 @@ class ActividadConOtCard extends StatelessWidget {
 
   /// Determina el estado visual de la actividad
   /// Considera tanto datos de BD como tracking local de SharedPreferences
+  /// Nota: Backlog ya NO es un estado visual, solo se muestra como texto en el título
   EstadoActividadCard get _estado {
-    // Backlog (prioridad máxima en detección)
-    if (actividad.bbacklog == true) {
-      return EstadoActividadCard.backlog;
-    }
-
     // En proceso: considera tracking local O datos de BD
     // Si tiene tracking local activo, está en proceso
     if (item.tieneTrackingLocal && item.localDtiempoinicio != null) {
@@ -67,12 +63,6 @@ class ActividadConOtCard extends StatelessWidget {
           color: AppColors.primary,
           texto: 'En Proceso',
           icono: Icons.play_circle,
-        );
-      case EstadoActividadCard.backlog:
-        return _ConfigEstado(
-          color: AppColors.warning,
-          texto: 'Backlog',
-          icono: Icons.warning_amber_rounded,
         );
     }
   }
@@ -343,27 +333,28 @@ class ActividadConOtCard extends StatelessWidget {
     return AppColors.primary;
   }
 
-  /// Header: Título de la actividad
+  /// Header: Título de la actividad con indicador de backlog si corresponde
   /// - Para TP: Muestra el título de la actividad principal
   /// - Para ST: Muestra la sub-actividad específica (sin contexto de actividad principal)
+  /// - Si bbacklog == true: Agrega " (backlog)" al final del título
   Widget _buildHeader() {
+    String titulo;
+    
     // Para Sub-Tareas (ST): Mostrar solo la sub-actividad
     if (_esSubTarea && item.subActividad != null && item.subActividad!.isNotEmpty) {
-      return Text(
-        item.subActividad!,
-        style: const TextStyle(
-          fontSize: 18,
-          fontWeight: FontWeight.bold,
-          color: AppColors.textPrimary,
-        ),
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-      );
+      titulo = item.subActividad!;
+    } else {
+      // Para Tareas Principales (TP): Mostrar título normal
+      titulo = actividad.cactividad ?? 'Sin descripción';
     }
 
-    // Para Tareas Principales (TP): Mostrar título normal
+    // Agregar " (backlog)" si corresponde
+    if (actividad.bbacklog == true) {
+      titulo = '$titulo (backlog)';
+    }
+
     return Text(
-      actividad.cactividad ?? 'Sin descripción',
+      titulo,
       style: const TextStyle(
         fontSize: 18,
         fontWeight: FontWeight.bold,

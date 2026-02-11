@@ -73,8 +73,8 @@ class ActividadConOt {
 }
 
 /// Enumeración de estados de actividad para visualización en cards
+/// Nota: Backlog ya NO es un estado visual, se muestra como texto en el título
 enum EstadoActividadCard {
   noIniciada,
   enProceso,
-  backlog,
 }
