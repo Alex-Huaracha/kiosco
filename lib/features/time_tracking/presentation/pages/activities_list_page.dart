@@ -587,9 +587,11 @@ class _ActivitiesListPageState
       ),
     );
 
-    // Si se finalizo la actividad, actualizar la lista
-    if (result != null && result is Map && result['success'] == true && mounted) {
-      _onActividadFinalizada(result);
+    // Si se finalizo la actividad o se marco como backlog, actualizar la lista
+    if (result != null && result is Map && mounted) {
+      if (result['success'] == true || result['backlog'] == true) {
+        _onActividadFinalizada(result);
+      }
     }
   }
 

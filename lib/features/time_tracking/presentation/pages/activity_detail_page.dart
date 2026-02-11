@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:hgtrack/core/network/api_client.dart';
 import 'package:hgtrack/core/network/connectivity_service.dart';
 import 'package:hgtrack/core/theme/app_colors.dart';
 import 'package:hgtrack/features/authentication/data/models/empleado.dart';
@@ -18,6 +19,7 @@ import 'package:hgtrack/features/time_tracking/presentation/widgets/activity_inf
 import 'package:hgtrack/features/time_tracking/presentation/widgets/current_state_card.dart';
 import 'package:hgtrack/features/time_tracking/presentation/widgets/observations_field.dart';
 import 'package:hgtrack/features/time_tracking/presentation/widgets/order_info_card.dart';
+import 'package:hgtrack/features/time_tracking/presentation/widgets/pause_reason_dialog.dart';
 import 'package:hgtrack/features/time_tracking/presentation/widgets/timeline_widget.dart';
 
 /// Pantalla de detalle de actividad con control de tiempo
@@ -179,19 +181,76 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
   Future<void> _onPausar() async {
     if (_trackingState == null) return;
 
+    // 1. Mostrar dialog para seleccionar motivo
+    final motivo = await PauseReasonDialog.show(context);
+    
+    // Si el usuario canceló, no hacer nada
+    if (motivo == null) return;
+
+    // 2. Verificar conexión (requerida para pausar)
+    if (!_isOnline) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Se requiere conexión a internet para pausar'),
+            backgroundColor: AppColors.error,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+      return;
+    }
+
+    setState(() => _isSaving = true);
+
     try {
+      final ahora = DateTime.now();
+      
+      // 3. Registrar pausa en el backend
+      int? idPausaBackend;
+      
+      if (widget.actividadConOt?.esSubTarea ?? false) {
+        // Sub-Tarea (ST) - usar endpoint de asignación
+        final idAsignacion = widget.actividadConOt?.idAsignacion;
+        if (idAsignacion == null) {
+          throw Exception('ID de asignación no disponible para Sub-Tarea');
+        }
+        
+        idPausaBackend = await TrackingApi().registrarPausaST(
+          idDetalleAsignacion: idAsignacion,
+          motivo: motivo,
+          tiempoInicio: ahora,
+        );
+      } else {
+        // Tarea Principal (TP) - usar endpoint de detalle orden trabajo
+        idPausaBackend = await TrackingApi().registrarPausaTP(
+          idDetalleOrdenTrabajo: widget.actividad.id!,
+          motivo: motivo,
+          tiempoInicio: ahora,
+        );
+      }
+
+      if (idPausaBackend == null) {
+        throw Exception('No se pudo registrar la pausa en el servidor');
+      }
+
+      // 4. Actualizar estado local con motivo e ID de pausa
       setState(() {
-        _trackingState = _trackingState!.pausar();
+        _trackingState = _trackingState!.pausar(
+          motivo: motivo,
+          idPausaBackend: idPausaBackend,
+        );
       });
+      
       await _saveState();
       _refreshTimer?.cancel(); // Detener timer al pausar
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Actividad pausada'),
+          SnackBar(
+            content: Text('Actividad pausada: $motivo'),
             backgroundColor: AppColors.warning,
-            duration: Duration(seconds: 2),
+            duration: const Duration(seconds: 2),
           ),
         );
       }
@@ -199,11 +258,14 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: $e'),
+            content: Text('Error al pausar: $e'),
             backgroundColor: AppColors.error,
+            duration: const Duration(seconds: 4),
           ),
         );
       }
+    } finally {
+      setState(() => _isSaving = false);
     }
   }
 
@@ -211,10 +273,66 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
   Future<void> _onReanudar() async {
     if (_trackingState == null) return;
 
+    // 1. Verificar que exista ID de pausa en backend
+    final idPausaBackend = _trackingState!.idPausaBackend;
+    if (idPausaBackend == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Error: No se encontró el ID de pausa'),
+            backgroundColor: AppColors.error,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+      return;
+    }
+
+    // 2. Verificar conexión (requerida para reanudar)
+    if (!_isOnline) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Se requiere conexión a internet para reanudar'),
+            backgroundColor: AppColors.error,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+      return;
+    }
+
+    setState(() => _isSaving = true);
+
     try {
+      final ahora = DateTime.now();
+
+      // 3. Reanudar pausa en el backend
+      bool exitoso = false;
+
+      if (widget.actividadConOt?.esSubTarea ?? false) {
+        // Sub-Tarea (ST) - usar endpoint de asignación
+        exitoso = await TrackingApi().reanudarPausaST(
+          idPausa: idPausaBackend,
+          tiempoFin: ahora,
+        );
+      } else {
+        // Tarea Principal (TP) - usar endpoint de detalle orden trabajo
+        exitoso = await TrackingApi().reanudarPausaTP(
+          idPausa: idPausaBackend,
+          tiempoFin: ahora,
+        );
+      }
+
+      if (!exitoso) {
+        throw Exception('No se pudo reanudar la pausa en el servidor');
+      }
+
+      // 4. Actualizar estado local (limpia idPausaBackend automáticamente)
       setState(() {
         _trackingState = _trackingState!.reanudar();
       });
+      
       await _saveState();
       _startTimerIfNeeded(); // Reiniciar timer al reanudar
 
@@ -231,11 +349,14 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: $e'),
+            content: Text('Error al reanudar: $e'),
             backgroundColor: AppColors.error,
+            duration: const Duration(seconds: 4),
           ),
         );
       }
+    } finally {
+      setState(() => _isSaving = false);
     }
   }
 
@@ -432,6 +553,80 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error al finalizar: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Acción: Marcar actividad como backlog (sin completar)
+  Future<void> _onMarcarBacklog() async {
+    if (_trackingState == null) return;
+
+    // Mostrar dialog de confirmación con campo opcional de observaciones
+    final resultado = await _mostrarDialogBacklog();
+    if (resultado == null) return; // Usuario canceló
+
+    final observaciones = resultado['observaciones'] as String?;
+    final confirmar = resultado['confirmar'] as bool? ?? false;
+
+    if (!confirmar) return;
+
+    setState(() => _isSaving = true);
+
+    try {
+      final service = ActivityService();
+
+      // Enviar al backend
+      final resultadoApi = await service.marcarComoBacklog(
+        actividad: widget.actividad,
+        observaciones: observaciones,
+      );
+
+      if (resultadoApi == null) {
+        // Error al enviar al backend
+        setState(() => _isSaving = false);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Error al marcar como backlog. Verifica tu conexión e intenta nuevamente.',
+              ),
+              backgroundColor: AppColors.error,
+              duration: Duration(seconds: 4),
+            ),
+          );
+        }
+        return;
+      }
+
+      // Éxito: limpiar estado local
+      await _storageService.clearState(widget.actividad.id!);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Actividad enviada a backlog para reprogramación'),
+            backgroundColor: AppColors.success,
+            duration: Duration(seconds: 3),
+          ),
+        );
+
+        // Volver a la lista con info de backlog
+        Navigator.pop(context, {
+          'backlog': true,
+          'actividadId': widget.actividad.id,
+        });
+      }
+    } catch (e) {
+      setState(() => _isSaving = false);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al marcar como backlog: $e'),
             backgroundColor: AppColors.error,
           ),
         );
@@ -951,22 +1146,46 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
 
     switch (estado) {
       case EstadoActividad.noIniciada:
-        return SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            onPressed: _onIniciar,
-            icon: const Icon(Icons.play_arrow),
-            label: const Text('Iniciar Actividad'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              textStyle: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
+        return Column(
+          children: [
+            // Botón principal: Iniciar Actividad
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _onIniciar,
+                icon: const Icon(Icons.play_arrow),
+                label: const Text('Iniciar Actividad'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  textStyle: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ),
-          ),
+            const SizedBox(height: 12),
+            // Botón secundario: Marcar como Backlog
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _onMarcarBacklog,
+                icon: const Icon(Icons.archive_outlined),
+                label: const Text('Marcar como Backlog'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.warning,
+                  side: const BorderSide(color: AppColors.warning, width: 2),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  textStyle: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
         );
 
       case EstadoActividad.enProceso:
@@ -1127,6 +1346,56 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
               foregroundColor: Colors.white,
             ),
             child: const Text('Sí, Finalizar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Diálogo para marcar como backlog con campo opcional de observaciones
+  Future<Map<String, dynamic>?> _mostrarDialogBacklog() {
+    final observacionesController = TextEditingController();
+
+    return showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('¿Marcar como backlog?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Esta actividad será marcada como pendiente y será reprogramada en una futura orden de trabajo.',
+              style: TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: observacionesController,
+              decoration: const InputDecoration(
+                labelText: 'Observaciones (opcional)',
+                hintText: 'Ej: Falta repuesto especial',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 3,
+              maxLength: 500,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, null),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, {
+              'confirmar': true,
+              'observaciones': observacionesController.text.trim(),
+            }),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.warning,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Sí, Marcar como Backlog'),
           ),
         ],
       ),

@@ -133,6 +133,33 @@ class ActivityService {
     }
   }
 
+  /// Marca una actividad como backlog (no completada).
+  /// 
+  /// La actividad sera reprogramada en una futura orden de trabajo.
+  /// Usado cuando el empleado no puede completar la actividad por razones
+  /// externas (falta repuesto, herramienta, etc.)
+  ///
+  /// [actividad] - Detalle de la actividad a marcar como backlog
+  /// [observaciones] - Razon opcional por la cual no se pudo completar
+  ///
+  /// Retorna el DTO actualizado en caso de éxito, null en caso de error
+  Future<HgDetalleOrdenTrabajoDto?> marcarComoBacklog({
+    required HgDetalleOrdenTrabajoDto actividad,
+    String? observaciones,
+  }) async {
+    try {
+      final api = TrackingApi();
+
+      return await api.marcarActividadComoBacklog(
+        idDetalleOrdenTrabajo: actividad.id!,
+        observaciones: observaciones,
+      );
+    } catch (e) {
+      print("Error en servicio de marcar como backlog: $e");
+      return null;
+    }
+  }
+
   /// Construye el nombre completo del empleado en formato: APELLIDOS, NOMBRES
   String _construirNombreCompleto(HgEmpleadoMantenimientoDto empleado) {
     final apellidoPaterno = empleado.apellidopaterno ?? '';

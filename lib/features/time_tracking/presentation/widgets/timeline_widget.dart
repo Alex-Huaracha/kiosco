@@ -226,6 +226,32 @@ class _TimelineItem extends StatelessWidget {
                     color: AppColors.textSecondary,
                   ),
                 ),
+                // Mostrar motivo si es una pausa y tiene motivo
+                if (periodo.tipo == TipoEvento.pausa && 
+                    periodo.motivo != null &&
+                    periodo.motivo!.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.label,
+                        size: 14,
+                        color: AppColors.warning,
+                      ),
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                          'Motivo: ${periodo.motivo}',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 if (periodo.duracion != null) ...[
                   const SizedBox(height: 4),
                   Row(

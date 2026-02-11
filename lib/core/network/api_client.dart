@@ -223,4 +223,241 @@ class TrackingApi {
       return false;
     }
   }
+
+  /// Marca una actividad como backlog (no completada, para reprogramacion).
+  /// 
+  /// Envia solo el ID de la actividad y el flag de backlog al backend.
+  /// La actividad sera reprogramada en una futura orden de trabajo.
+  /// 
+  /// [idDetalleOrdenTrabajo] - ID del detalle de orden de trabajo
+  /// [observaciones] - Observaciones opcionales (ej: "Falta repuesto X")
+  /// 
+  /// Retorna el DTO actualizado en caso de exito, null en caso de error
+  Future<HgDetalleOrdenTrabajoDto?> marcarActividadComoBacklog({
+    required int idDetalleOrdenTrabajo,
+    String? observaciones,
+  }) async {
+    var client = http.Client();
+    var url = '$_hgapiEndpoint/updatedetalleordentrabajo';
+    var uri = Uri.parse(url);
+
+    // Request minimo: solo ID y flag de backlog
+    final Map<String, dynamic> requestBody = {
+      "iddetalleordentrabajo": idDetalleOrdenTrabajo.toString(),
+      "bbacklog": "true",
+    };
+
+    // Agregar observaciones si existen
+    if (observaciones != null && observaciones.isNotEmpty) {
+      requestBody["cobservaciones"] = observaciones;
+    }
+
+    String jsonBody = jsonEncode(requestBody);
+
+    try {
+      var response = await client.post(
+        uri,
+        headers: {"Content-Type": "application/json"},
+        body: jsonBody,
+      );
+
+      if (response.statusCode == 200) {
+        print("Actividad marcada como backlog exitosamente (ID: $idDetalleOrdenTrabajo)");
+
+        // Parsear respuesta a DTO
+        final jsonResponse =
+            jsonDecode(const Utf8Decoder().convert(response.bodyBytes));
+        return HgDetalleOrdenTrabajoDto.fromJson(jsonResponse);
+      } else {
+        print("Error al marcar como backlog: Codigo ${response.statusCode}");
+        print("Mensaje: ${response.body}");
+        return null;
+      }
+    } catch (e) {
+      print("Excepcion al marcar como backlog: $e");
+      return null;
+    }
+  }
+
+  /// Registra una nueva pausa para Tarea Principal (TP - DetalleOrdenTrabajo).
+  /// 
+  /// Llama al endpoint /gestionarpausadetalleordentrabajo para crear un registro de pausa.
+  /// 
+  /// [idDetalleOrdenTrabajo] - ID del detalle de orden de trabajo
+  /// [motivo] - Motivo de la pausa (máximo 500 caracteres)
+  /// [tiempoInicio] - Timestamp de inicio de pausa
+  /// 
+  /// Retorna el ID de la pausa creada en caso de éxito, null en caso de error
+  Future<int?> registrarPausaTP({
+    required int idDetalleOrdenTrabajo,
+    required String motivo,
+    required DateTime tiempoInicio,
+  }) async {
+    var client = http.Client();
+    var url = '$_hgapiEndpoint/gestionarpausadetalleordentrabajo';
+    var uri = Uri.parse(url);
+
+    String jsonBody = jsonEncode({
+      "iddetalleordentrabajo": idDetalleOrdenTrabajo.toString(),
+      "cmotivo": motivo,
+      "dtiempoinicio": _formatFecha(tiempoInicio),
+    });
+
+    try {
+      var response = await client.post(
+        uri,
+        headers: {"Content-Type": "application/json"},
+        body: jsonBody,
+      );
+
+      if (response.statusCode == 200) {
+        print("Pausa TP registrada exitosamente");
+        
+        final jsonResponse =
+            jsonDecode(const Utf8Decoder().convert(response.bodyBytes));
+        return jsonResponse['id'] as int?;
+      } else {
+        print("Error al registrar pausa TP: Codigo ${response.statusCode}");
+        print("Mensaje: ${response.body}");
+        return null;
+      }
+    } catch (e) {
+      print("Excepcion al registrar pausa TP: $e");
+      return null;
+    }
+  }
+
+  /// Reanuda una pausa existente para Tarea Principal (TP - DetalleOrdenTrabajo).
+  /// 
+  /// Llama al endpoint /gestionarpausadetalleordentrabajo para actualizar el registro de pausa.
+  /// El backend calcula automáticamente los minutos de pausa.
+  /// 
+  /// [idPausa] - ID de la pausa retornado al crearla
+  /// [tiempoFin] - Timestamp de fin de pausa
+  /// 
+  /// Retorna true en caso de éxito, false en caso de error
+  Future<bool> reanudarPausaTP({
+    required int idPausa,
+    required DateTime tiempoFin,
+  }) async {
+    var client = http.Client();
+    var url = '$_hgapiEndpoint/gestionarpausadetalleordentrabajo';
+    var uri = Uri.parse(url);
+
+    String jsonBody = jsonEncode({
+      "id": idPausa.toString(),
+      "dtiempofin": _formatFecha(tiempoFin),
+    });
+
+    try {
+      var response = await client.post(
+        uri,
+        headers: {"Content-Type": "application/json"},
+        body: jsonBody,
+      );
+
+      if (response.statusCode == 200) {
+        print("Pausa TP reanudada exitosamente (ID: $idPausa)");
+        return true;
+      } else {
+        print("Error al reanudar pausa TP: Codigo ${response.statusCode}");
+        print("Mensaje: ${response.body}");
+        return false;
+      }
+    } catch (e) {
+      print("Excepcion al reanudar pausa TP: $e");
+      return false;
+    }
+  }
+
+  /// Registra una nueva pausa para Sub-Tarea (ST - DetalleAsignacion).
+  /// 
+  /// Llama al endpoint /gestionarpausadetalleasignacion para crear un registro de pausa.
+  /// 
+  /// [idDetalleAsignacion] - ID de la asignación (empleado asistente)
+  /// [motivo] - Motivo de la pausa (máximo 500 caracteres)
+  /// [tiempoInicio] - Timestamp de inicio de pausa
+  /// 
+  /// Retorna el ID de la pausa creada en caso de éxito, null en caso de error
+  Future<int?> registrarPausaST({
+    required int idDetalleAsignacion,
+    required String motivo,
+    required DateTime tiempoInicio,
+  }) async {
+    var client = http.Client();
+    var url = '$_hgapiEndpoint/gestionarpausadetalleasignacion';
+    var uri = Uri.parse(url);
+
+    String jsonBody = jsonEncode({
+      "iddetalleasignacion": idDetalleAsignacion.toString(),
+      "cmotivo": motivo,
+      "dtiempoinicio": _formatFecha(tiempoInicio),
+    });
+
+    try {
+      var response = await client.post(
+        uri,
+        headers: {"Content-Type": "application/json"},
+        body: jsonBody,
+      );
+
+      if (response.statusCode == 200) {
+        print("Pausa ST registrada exitosamente");
+        
+        final jsonResponse =
+            jsonDecode(const Utf8Decoder().convert(response.bodyBytes));
+        return jsonResponse['id'] as int?;
+      } else {
+        print("Error al registrar pausa ST: Codigo ${response.statusCode}");
+        print("Mensaje: ${response.body}");
+        return null;
+      }
+    } catch (e) {
+      print("Excepcion al registrar pausa ST: $e");
+      return null;
+    }
+  }
+
+  /// Reanuda una pausa existente para Sub-Tarea (ST - DetalleAsignacion).
+  /// 
+  /// Llama al endpoint /gestionarpausadetalleasignacion para actualizar el registro de pausa.
+  /// El backend calcula automáticamente los minutos de pausa.
+  /// 
+  /// [idPausa] - ID de la pausa retornado al crearla
+  /// [tiempoFin] - Timestamp de fin de pausa
+  /// 
+  /// Retorna true en caso de éxito, false en caso de error
+  Future<bool> reanudarPausaST({
+    required int idPausa,
+    required DateTime tiempoFin,
+  }) async {
+    var client = http.Client();
+    var url = '$_hgapiEndpoint/gestionarpausadetalleasignacion';
+    var uri = Uri.parse(url);
+
+    String jsonBody = jsonEncode({
+      "id": idPausa.toString(),
+      "dtiempofin": _formatFecha(tiempoFin),
+    });
+
+    try {
+      var response = await client.post(
+        uri,
+        headers: {"Content-Type": "application/json"},
+        body: jsonBody,
+      );
+
+      if (response.statusCode == 200) {
+        print("Pausa ST reanudada exitosamente (ID: $idPausa)");
+        return true;
+      } else {
+        print("Error al reanudar pausa ST: Codigo ${response.statusCode}");
+        print("Mensaje: ${response.body}");
+        return false;
+      }
+    } catch (e) {
+      print("Excepcion al reanudar pausa ST: $e");
+      return false;
+    }
+  }
 }

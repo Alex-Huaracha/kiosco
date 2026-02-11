@@ -8,6 +8,7 @@ class ActividadTrackingState {
   final DateTime? inicioActual; // Inicio del periodo actual en proceso
   final List<PeriodoTrabajo> periodos;
   final String? observaciones;
+  final int? idPausaBackend; // ID de la pausa activa en el backend (para reanudar)
 
   ActividadTrackingState({
     required this.idActividad,
@@ -15,6 +16,7 @@ class ActividadTrackingState {
     this.inicioActual,
     required this.periodos,
     this.observaciones,
+    this.idPausaBackend,
   });
 
   /// Tiempo total trabajado (suma de todos los periodos cerrados)
@@ -104,7 +106,7 @@ class ActividadTrackingState {
   }
 
   /// Pausa la actividad
-  ActividadTrackingState pausar() {
+  ActividadTrackingState pausar({required String motivo, int? idPausaBackend}) {
     if (estado != EstadoActividad.enProceso) {
       throw StateError('Solo se puede pausar una actividad en proceso');
     }
@@ -120,10 +122,11 @@ class ActividadTrackingState {
     final ultimoIndice = nuevoPeriodos.length - 1;
     nuevoPeriodos[ultimoIndice] = nuevoPeriodos[ultimoIndice].cerrar(ahora);
 
-    // Agregar evento de pausa
+    // Agregar evento de pausa con motivo
     nuevoPeriodos.add(PeriodoTrabajo(
       inicio: ahora,
       tipo: TipoEvento.pausa,
+      motivo: motivo,
     ));
 
     return ActividadTrackingState(
@@ -132,6 +135,7 @@ class ActividadTrackingState {
       inicioActual: null,
       periodos: nuevoPeriodos,
       observaciones: observaciones,
+      idPausaBackend: idPausaBackend,
     );
   }
 
@@ -154,6 +158,7 @@ class ActividadTrackingState {
         ),
       ],
       observaciones: observaciones,
+      idPausaBackend: null, // Limpiar ID de pausa al reanudar
     );
   }
 
@@ -234,6 +239,7 @@ class ActividadTrackingState {
       'inicioActual': inicioActual?.toIso8601String(),
       'periodos': periodos.map((p) => p.toJson()).toList(),
       'observaciones': observaciones,
+      'idPausaBackend': idPausaBackend,
     };
   }
 
@@ -252,6 +258,7 @@ class ActividadTrackingState {
           .map((p) => PeriodoTrabajo.fromJson(p as Map<String, dynamic>))
           .toList(),
       observaciones: json['observaciones'] as String?,
+      idPausaBackend: json['idPausaBackend'] as int?,
     );
   }
 
@@ -275,11 +282,13 @@ class PeriodoTrabajo {
   final DateTime inicio;
   final DateTime? fin;
   final TipoEvento tipo;
+  final String? motivo; // Motivo de pausa (solo para tipo == TipoEvento.pausa)
 
   PeriodoTrabajo({
     required this.inicio,
     this.fin,
     required this.tipo,
+    this.motivo,
   });
 
   /// Duración del periodo (null si no está cerrado)
@@ -294,6 +303,7 @@ class PeriodoTrabajo {
       inicio: inicio,
       fin: fechaFin,
       tipo: tipo,
+      motivo: motivo,
     );
   }
 
@@ -302,6 +312,7 @@ class PeriodoTrabajo {
       'inicio': inicio.toIso8601String(),
       'fin': fin?.toIso8601String(),
       'tipo': tipo.name,
+      'motivo': motivo,
     };
   }
 
@@ -313,6 +324,7 @@ class PeriodoTrabajo {
         (e) => e.name == json['tipo'],
         orElse: () => TipoEvento.inicio,
       ),
+      motivo: json['motivo'] as String?,
     );
   }
 }
