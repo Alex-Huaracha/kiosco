@@ -4,11 +4,13 @@ import 'package:hgtrack/core/theme/app_colors.dart';
 
 /// Motivos predefinidos de pausa
 enum MotivosPausa {
-  almuerzo('Almuerzo', Icons.restaurant),
-  reunion('Reunión', Icons.groups),
-  esperaRepuestos('Espera de repuestos', Icons.inventory_2),
-  esperaSupervisor('Espera de supervisor', Icons.supervisor_account),
-  descanso('Descanso', Icons.coffee),
+  serviciosHigienicos('Servicios higiénicos', Icons.wc),
+  reasignacionTarea('Re-asignación de tarea', Icons.swap_horiz),
+  faltaRepuesto('Falta de repuesto', Icons.inventory_2),
+  faltaHerramienta('Falta de herramienta', Icons.build),
+  alimentacion('Alimentación', Icons.restaurant),
+  finTurno('Fin de turno', Icons.access_time),
+  auxilioMecanico('Auxilio mecánico', Icons.engineering),
   otro('Otro (especificar)', Icons.edit_note);
 
   final String label;
@@ -124,7 +126,7 @@ class _PauseReasonDialogState extends State<PauseReasonDialog> {
                     crossAxisCount: isLandscape ? 2 : 1,
                     crossAxisSpacing: 12,
                     mainAxisSpacing: 12,
-                    childAspectRatio: isLandscape ? 3.5 : 4.5,
+                    childAspectRatio: isLandscape ? 3.2 : 4.5,
                   ),
                   itemCount: MotivosPausa.values.length,
                   itemBuilder: (context, index) {
