@@ -1,6 +1,7 @@
 import 'package:hgtrack/features/time_tracking/data/models/actividad.dart';
 import 'package:hgtrack/features/time_tracking/data/models/detalle_orden_trabajo.dart';
 import 'package:hgtrack/features/time_tracking/data/models/orden_trabajo.dart';
+import 'package:hgtrack/features/time_tracking/domain/tracking_state.dart';
 
 /// Clase helper para mantener la relación entre actividad + OT
 /// 
@@ -37,6 +38,10 @@ class ActividadConOt {
   /// Indica si hay un estado de tracking activo en SharedPreferences
   bool tieneTrackingLocal;
 
+  /// Estado actual de la actividad desde tracking local (SharedPreferences)
+  /// Se usa para determinar el badge de estado (No Iniciada, En Proceso, Pausada, Finalizada)
+  EstadoActividad? estadoLocal;
+
   ActividadConOt({
     required this.actividad,
     required this.ordentrabajo,
@@ -45,6 +50,7 @@ class ActividadConOt {
     this.localDtiempofin,
     this.localMinutosTrabajados,
     this.tieneTrackingLocal = false,
+    this.estadoLocal,
   });
 
   /// Verifica si es una Sub-Tarea (asistencia)
@@ -77,4 +83,6 @@ class ActividadConOt {
 enum EstadoActividadCard {
   noIniciada,
   enProceso,
+  pausada,      // ← NUEVO: Estado pausado
+  finalizada,   // ← NUEVO: Estado finalizado (opcional)
 }

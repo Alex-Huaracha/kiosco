@@ -244,6 +244,9 @@ class _ActivitiesListPageState
           // Tiene tracking local activo
           item.tieneTrackingLocal = true;
 
+          // NUEVO: Guardar el estado completo (noIniciada, enProceso, pausada, finalizada)
+          item.estadoLocal = trackingState.estado;
+
           // Obtener fecha/hora de inicio del primer periodo
           item.localDtiempoinicio = trackingState.periodos.first.inicio;
 
@@ -592,6 +595,16 @@ class _ActivitiesListPageState
       if (result['success'] == true || result['backlog'] == true) {
         _onActividadFinalizada(result);
       }
+      // Si hubo cambios de estado local (inicio/pausa/reanudación)
+      else if (result['changed'] == true) {
+        final String? action = result['action'] as String?;
+        await _recargarEstadosLocales();
+        
+        // Mostrar feedback visual según la acción
+        if (action != null) {
+          _mostrarFeedbackAccion(action);
+        }
+      }
     }
   }
 
@@ -626,5 +639,69 @@ class _ActivitiesListPageState
       // Volver indicando que hubo cambios para que se recargue la lista de empleados
       Navigator.pop(context, true);
     }
+  }
+
+  /// Recarga solo los estados locales de las actividades actuales
+  /// sin hacer llamada al backend.
+  /// 
+  /// Se ejecuta cuando el usuario regresa de la pantalla de detalle
+  /// después de iniciar, pausar o reanudar una actividad.
+  Future<void> _recargarEstadosLocales() async {
+    if (actividadesPendientes == null) return;
+    
+    final localStorageService = ActividadLocalStorageService();
+    
+    // Re-enriquecer solo las actividades actuales (sin backend)
+    await _enriquecerConDatosLocales(
+      actividadesPendientes!,
+      localStorageService,
+    );
+    
+    // NO re-ordenar (mantener orden actual)
+    // _ordenarActividades(actividadesPendientes!); ← Comentado intencionalmente
+    
+    // Refrescar UI
+    if (mounted) {
+      setState(() {
+        // Solo trigger rebuild con los datos actualizados
+      });
+    }
+  }
+
+  /// Muestra SnackBar con feedback según la acción realizada
+  void _mostrarFeedbackAccion(String action) {
+    if (!mounted) return;
+    
+    String mensaje;
+    Color backgroundColor;
+    
+    switch (action) {
+      case 'iniciada':
+        mensaje = 'Actividad iniciada';
+        backgroundColor = AppColors.success;
+        break;
+      case 'pausada':
+        mensaje = 'Actividad pausada';
+        backgroundColor = AppColors.warning;
+        break;
+      case 'reanudada':
+        mensaje = 'Actividad reanudada';
+        backgroundColor = AppColors.success;
+        break;
+      case 'cancelada':
+        mensaje = 'Actividad cancelada';
+        backgroundColor = AppColors.textSecondary;
+        break;
+      default:
+        return; // No mostrar nada si la acción es desconocida
+    }
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(mensaje),
+        backgroundColor: backgroundColor,
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 }

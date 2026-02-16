@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:hgtrack/core/theme/app_colors.dart';
 import 'package:hgtrack/features/time_tracking/data/models/detalle_orden_trabajo.dart';
 import 'package:hgtrack/features/time_tracking/data/models/orden_trabajo.dart';
+import 'package:hgtrack/features/time_tracking/domain/tracking_state.dart';
 import 'package:hgtrack/features/time_tracking/presentation/widgets/actividad_con_ot_model.dart';
 
 /// Card individual de actividad con información completa de la OT
@@ -35,17 +36,31 @@ class ActividadConOtCard extends StatelessWidget {
   /// Considera tanto datos de BD como tracking local de SharedPreferences
   /// Nota: Backlog ya NO es un estado visual, solo se muestra como texto en el título
   EstadoActividadCard get _estado {
-    // En proceso: considera tracking local O datos de BD
-    // Si tiene tracking local activo, está en proceso
+    // PRIORIDAD 1: Si hay estado local guardado (desde SharedPreferences), usarlo
+    if (item.estadoLocal != null) {
+      switch (item.estadoLocal!) {
+        case EstadoActividad.pausada:
+          return EstadoActividadCard.pausada;
+        case EstadoActividad.enProceso:
+          return EstadoActividadCard.enProceso;
+        case EstadoActividad.finalizada:
+          return EstadoActividadCard.finalizada;
+        case EstadoActividad.noIniciada:
+          return EstadoActividadCard.noIniciada;
+      }
+    }
+
+    // PRIORIDAD 2: Si tiene tracking local pero no tiene estadoLocal guardado (legacy)
     if (item.tieneTrackingLocal && item.localDtiempoinicio != null) {
       return EstadoActividadCard.enProceso;
     }
-    // Si tiene inicio en BD pero no fin, está en proceso
+
+    // PRIORIDAD 3: Si tiene inicio en BD pero no fin, está en proceso
     if (actividad.dtiempoinicio != null && actividad.dtiempofin == null) {
       return EstadoActividadCard.enProceso;
     }
 
-    // No iniciada (pendiente)
+    // FALLBACK: No iniciada (pendiente)
     return EstadoActividadCard.noIniciada;
   }
 
@@ -63,6 +78,18 @@ class ActividadConOtCard extends StatelessWidget {
           color: AppColors.primary,
           texto: 'En Proceso',
           icono: Icons.play_circle,
+        );
+      case EstadoActividadCard.pausada:
+        return _ConfigEstado(
+          color: AppColors.warning,
+          texto: 'Pausada',
+          icono: Icons.pause_circle,
+        );
+      case EstadoActividadCard.finalizada:
+        return _ConfigEstado(
+          color: AppColors.success,
+          texto: 'Terminada',
+          icono: Icons.check_circle,
         );
     }
   }

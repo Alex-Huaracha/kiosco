@@ -157,13 +157,12 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
       _startTimerIfNeeded(); // Iniciar timer para actualizar UI
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Actividad iniciada'),
-            backgroundColor: AppColors.success,
-            duration: Duration(seconds: 2),
-          ),
-        );
+        // Retornar resultado indicando que se inició la actividad
+        Navigator.pop(context, {
+          'changed': true,
+          'action': 'iniciada',
+          'actividadId': widget.actividad.id,
+        });
       }
     } catch (e) {
       if (mounted) {
@@ -246,13 +245,12 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
       _refreshTimer?.cancel(); // Detener timer al pausar
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Actividad pausada: $motivo'),
-            backgroundColor: AppColors.warning,
-            duration: const Duration(seconds: 2),
-          ),
-        );
+        // Retornar resultado indicando que se pausó la actividad
+        Navigator.pop(context, {
+          'changed': true,
+          'action': 'pausada',
+          'actividadId': widget.actividad.id,
+        });
       }
     } catch (e) {
       if (mounted) {
@@ -337,13 +335,12 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
       _startTimerIfNeeded(); // Reiniciar timer al reanudar
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Actividad reanudada'),
-            backgroundColor: AppColors.success,
-            duration: Duration(seconds: 2),
-          ),
-        );
+        // Retornar resultado indicando que se reanudó la actividad
+        Navigator.pop(context, {
+          'changed': true,
+          'action': 'reanudada',
+          'actividadId': widget.actividad.id,
+        });
       }
     } catch (e) {
       if (mounted) {
@@ -384,13 +381,12 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
       _observacionesController.clear();
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Actividad cancelada. Progreso descartado.'),
-            backgroundColor: AppColors.warning,
-            duration: Duration(seconds: 3),
-          ),
-        );
+        // Retornar resultado indicando que se canceló la actividad
+        Navigator.pop(context, {
+          'changed': true,
+          'action': 'cancelada',
+          'actividadId': widget.actividad.id,
+        });
       }
     } catch (e) {
       if (mounted) {
