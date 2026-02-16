@@ -1,8 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:hgtrack/core/network/api_client.dart';
-import 'package:hgtrack/features/authentication/data/models/empleado.dart';
-import 'package:hgtrack/features/time_tracking/data/models/detalle_orden_trabajo.dart';
 import 'package:hgtrack/features/time_tracking/data/models/pending_sync_activity.dart';
 import 'package:hgtrack/features/time_tracking/data/services/activity_service.dart';
 
@@ -180,33 +178,20 @@ class PendingSyncService {
     }
   }
 
-  /// Sincroniza una Tarea Principal (TP) usando /updatedetalleordentrabajo
+  /// Sincroniza una Tarea Principal (TP) usando endpoint unificado
+  /// /gestionarestadoactividad con acción FINALIZAR
   Future<bool> _syncTareaPrincipal(PendingSyncActivity activity) async {
     final service = ActivityService();
 
-    // Crear DTOs necesarios para el servicio
-    final actividadDto = HgDetalleOrdenTrabajoDto(
-      id: activity.idActividad,
-      cactividad: activity.nombreActividad,
+    // Usar NUEVO endpoint unificado con acción FINALIZAR
+    // NOTA: No enviamos minutosEmpleado, el backend lo calcula automáticamente
+    final response = await service.finalizarActividadTPNuevo(
+      idDetalleOrdenTrabajo: activity.idActividad,
+      timestamp: activity.fechaFin,
+      observaciones: activity.observaciones,
     );
 
-    final empleadoDto = HgEmpleadoMantenimientoDto(
-      id: activity.idEmpleado,
-      nombres: activity.nombreEmpleado,
-      cargo: activity.cargoEmpleado,
-    );
-
-    // Intentar enviar al backend
-    final resultado = await service.finalizarActividad(
-      actividad: actividadDto,
-      empleado: empleadoDto,
-      tiempoInicio: activity.fechaInicio,
-      tiempoFin: activity.fechaFin,
-      minutosEmpleado: activity.minutosTotal,
-      observaciones: activity.observaciones ?? '',
-    );
-
-    return resultado != null;
+    return response != null && response.exito;
   }
 
   /// Sincroniza una Sub-Tarea (ST) usando /adddetalleasignacion
@@ -336,10 +321,5 @@ class PendingSyncService {
         ? activity.idAsignacion ?? activity.idActividad
         : activity.idActividad;
     return '$_keyPrefix${tipo}_$id';
-  }
-
-  /// Construye la clave usando solo el ID (para compatibilidad con datos antiguos)
-  String _buildKeyLegacy(int idActividad) {
-    return '${_keyPrefix}TP_$idActividad';
   }
 }

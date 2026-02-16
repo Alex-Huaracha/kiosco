@@ -536,17 +536,33 @@ flutter run --profile
 
 ## 🚧 Known TODOs & Pending Work
 
-### ✅ Backend Integration (COMPLETED)
-**Endpoint:** `POST /hgapi/updatedetalleordentrabajo`
+### ✅ Backend Integration - Endpoint Unificado (COMPLETED)
+**Endpoint:** `POST /api/v1/gestionarestadoactividad`
 
-**Status:** ✅ Fully implemented and integrated
+**Status:** ✅ Fully migrated to unified RESTful endpoint (Feb 2026)
+
+**Architecture:**
+- **Unified State Machine:** Single endpoint handles INICIAR, PAUSAR, REANUDAR, FINALIZAR
+- **TP Support:** All Tareas Principales (DetalleOrdenTrabajo) use new endpoint
+- **ST Support:** Sub-Tareas (DetalleAsignacion) maintain existing endpoints
+- **Offline Sync:** PendingSyncService migrated to new request format
 
 **Implementation:**
-- `TrackingApi.finalizarActividadEmpleado()` - HTTP request with custom date format
-- `TrackingServiceActividadesEmpleado.finalizarActividad()` - Service wrapper
-- UI integration in `actividad_detalle_page.dart` with error handling and retry logic
+- `TrackingApi.gestionarEstadoActividadTP()` - Unified HTTP client for all actions
+- `ActivityService.iniciarActividadTP()` - INICIAR wrapper
+- `ActivityService.pausarActividadTP()` - PAUSAR wrapper (returns idpausa)
+- `ActivityService.reanudarActividadTP()` - REANUDAR wrapper (idpausa is optional)
+- `ActivityService.finalizarActividadTPNuevo()` - FINALIZAR wrapper
+- UI integration in `activity_detail_page.dart` with real-time sync
 
 **Date Format:** `yyyy-MM-dd HH:mm:ss.SSS` (custom format, not ISO8601)
+
+**Key Features:**
+- ✅ INICIAR sends timestamp to backend immediately (real-time sync for supervisors)
+- ✅ PAUSAR creates pause record and returns idpausa (stored locally for debugging)
+- ✅ REANUDAR automatically finds active pause (no idpausa needed in 99% of cases)
+- ✅ FINALIZAR sends total worked minutes (calculated in frontend)
+- ✅ Offline support with automatic queue retry using new format
 
 **Request Example:**
 ```json

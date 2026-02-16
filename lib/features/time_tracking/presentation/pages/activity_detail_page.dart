@@ -149,15 +149,42 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
 
     if (confirmar != true) return;
 
+    setState(() => _isSaving = true);
+
     try {
+      final ahora = DateTime.now();
+
+      // 1. Actualizar estado local PRIMERO (siempre se guarda, falle o no el backend)
       setState(() {
         _trackingState = _trackingState!.iniciar();
       });
       await _saveState();
-      _startTimerIfNeeded(); // Iniciar timer para actualizar UI
+      _startTimerIfNeeded();
+
+      // 2. Enviar al backend si está online Y es TP
+      final esSubTarea = widget.actividadConOt?.esSubTarea ?? false;
+
+      if (_isOnline && !esSubTarea) {
+        // Solo enviar INICIAR para Tareas Principales (TP)
+        final service = ActivityService();
+        final response = await service.iniciarActividadTP(
+          idDetalleOrdenTrabajo: widget.actividad.id!,
+          timestamp: ahora,
+        );
+
+        if (response == null || !response.exito) {
+          // Advertencia en consola, pero NO bloquear operación
+          print(
+              "⚠️ Advertencia: No se pudo registrar inicio en backend, continuando localmente");
+          print("   Motivo: ${response?.mensaje ?? 'Error de conexión'}");
+          // El estado local ya está guardado - el técnico puede continuar trabajando
+        } else {
+          print("✅ Actividad iniciada correctamente en backend");
+        }
+      }
+      // Para ST, solo guardar local (como antes)
 
       if (mounted) {
-        // Retornar resultado indicando que se inició la actividad
         Navigator.pop(context, {
           'changed': true,
           'action': 'iniciada',
@@ -173,6 +200,8 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
           ),
         );
       }
+    } finally {
+      setState(() => _isSaving = false);
     }
   }
 
@@ -182,7 +211,7 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
 
     // 1. Mostrar dialog para seleccionar motivo
     final motivo = await PauseReasonDialog.show(context);
-    
+
     // Si el usuario canceló, no hacer nada
     if (motivo == null) return;
 
@@ -204,48 +233,54 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
 
     try {
       final ahora = DateTime.now();
-      
-      // 3. Registrar pausa en el backend
+      final esSubTarea = widget.actividadConOt?.esSubTarea ?? false;
+
       int? idPausaBackend;
-      
-      if (widget.actividadConOt?.esSubTarea ?? false) {
-        // Sub-Tarea (ST) - usar endpoint de asignación
+
+      if (esSubTarea) {
+        // Sub-Tarea (ST) - usar endpoint específico (sin cambios)
         final idAsignacion = widget.actividadConOt?.idAsignacion;
         if (idAsignacion == null) {
           throw Exception('ID de asignación no disponible para Sub-Tarea');
         }
-        
+
         idPausaBackend = await TrackingApi().registrarPausaST(
           idDetalleAsignacion: idAsignacion,
           motivo: motivo,
           tiempoInicio: ahora,
         );
       } else {
-        // Tarea Principal (TP) - usar endpoint de detalle orden trabajo
-        idPausaBackend = await TrackingApi().registrarPausaTP(
+        // Tarea Principal (TP) - usar NUEVO endpoint unificado
+        final service = ActivityService();
+        final response = await service.pausarActividadTP(
           idDetalleOrdenTrabajo: widget.actividad.id!,
           motivo: motivo,
-          tiempoInicio: ahora,
+          timestamp: ahora,
         );
+
+        if (response == null || !response.exito) {
+          throw Exception(response?.mensaje ?? 'No se pudo pausar la actividad');
+        }
+
+        idPausaBackend = response.idpausa;
       }
 
       if (idPausaBackend == null) {
-        throw Exception('No se pudo registrar la pausa en el servidor');
+        throw Exception('No se recibió ID de pausa del servidor');
       }
 
-      // 4. Actualizar estado local con motivo e ID de pausa
+      // Actualizar estado local con motivo e ID de pausa
       setState(() {
         _trackingState = _trackingState!.pausar(
           motivo: motivo,
           idPausaBackend: idPausaBackend,
         );
       });
-      
+
       await _saveState();
       _refreshTimer?.cancel(); // Detener timer al pausar
 
       if (mounted) {
-        // Retornar resultado indicando que se pausó la actividad
         Navigator.pop(context, {
           'changed': true,
           'action': 'pausada',
@@ -271,22 +306,7 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
   Future<void> _onReanudar() async {
     if (_trackingState == null) return;
 
-    // 1. Verificar que exista ID de pausa en backend
-    final idPausaBackend = _trackingState!.idPausaBackend;
-    if (idPausaBackend == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Error: No se encontró el ID de pausa'),
-            backgroundColor: AppColors.error,
-            duration: Duration(seconds: 3),
-          ),
-        );
-      }
-      return;
-    }
-
-    // 2. Verificar conexión (requerida para reanudar)
+    // 1. Verificar conexión (requerida para reanudar)
     if (!_isOnline) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -304,38 +324,51 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
 
     try {
       final ahora = DateTime.now();
+      final esSubTarea = widget.actividadConOt?.esSubTarea ?? false;
 
-      // 3. Reanudar pausa en el backend
       bool exitoso = false;
 
-      if (widget.actividadConOt?.esSubTarea ?? false) {
-        // Sub-Tarea (ST) - usar endpoint de asignación
+      if (esSubTarea) {
+        // Sub-Tarea (ST) - usar endpoint específico (requiere idPausa)
+        final idPausaBackend = _trackingState!.idPausaBackend;
+        if (idPausaBackend == null) {
+          throw Exception('No se encontró el ID de pausa para Sub-Tarea');
+        }
+
         exitoso = await TrackingApi().reanudarPausaST(
           idPausa: idPausaBackend,
           tiempoFin: ahora,
         );
       } else {
-        // Tarea Principal (TP) - usar endpoint de detalle orden trabajo
-        exitoso = await TrackingApi().reanudarPausaTP(
-          idPausa: idPausaBackend,
-          tiempoFin: ahora,
+        // Tarea Principal (TP) - usar NUEVO endpoint unificado
+        // NO enviamos idpausa - el backend busca automáticamente la pausa activa
+        final service = ActivityService();
+        final response = await service.reanudarActividadTP(
+          idDetalleOrdenTrabajo: widget.actividad.id!,
+          timestamp: ahora,
         );
+
+        exitoso = response != null && response.exito;
+
+        if (!exitoso) {
+          throw Exception(
+              response?.mensaje ?? 'No se pudo reanudar la actividad');
+        }
       }
 
       if (!exitoso) {
         throw Exception('No se pudo reanudar la pausa en el servidor');
       }
 
-      // 4. Actualizar estado local (limpia idPausaBackend automáticamente)
+      // Actualizar estado local (limpia idPausaBackend automáticamente)
       setState(() {
         _trackingState = _trackingState!.reanudar();
       });
-      
+
       await _saveState();
       _startTimerIfNeeded(); // Reiniciar timer al reanudar
 
       if (mounted) {
-        // Retornar resultado indicando que se reanudó la actividad
         Navigator.pop(context, {
           'changed': true,
           'action': 'reanudada',
@@ -454,26 +487,24 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
       bool exito = false;
 
       if (esSubTarea && widget.actividadConOt?.actividadDto != null) {
-        // Sub-Tarea (ST) - usar servicio unificado
-        exito = await service.finalizarActividadUnificado(
+        // Sub-Tarea (ST) - usar método existente (sin cambios)
+        exito = await service.finalizarSubTarea(
           actividadDto: widget.actividadConOt!.actividadDto!,
-          empleado: widget.empleado,
           tiempoInicio: fechaInicio,
           tiempoFin: fechaFin,
           minutosEmpleado: minutosTotal,
           observaciones: _observacionesController.text.trim(),
         );
       } else {
-        // Tarea Principal (TP) - usar método original
-        final resultado = await service.finalizarActividad(
-          actividad: widget.actividad,
-          empleado: widget.empleado,
-          tiempoInicio: fechaInicio,
-          tiempoFin: fechaFin,
-          minutosEmpleado: minutosTotal,
+        // Tarea Principal (TP) - usar NUEVO endpoint unificado
+        // NOTA: No enviamos minutosEmpleado, el backend lo calcula automáticamente
+        final response = await service.finalizarActividadTPNuevo(
+          idDetalleOrdenTrabajo: widget.actividad.id!,
+          timestamp: fechaFin,
           observaciones: _observacionesController.text.trim(),
         );
-        exito = resultado != null;
+
+        exito = response != null && response.exito;
       }
 
       if (!exito) {

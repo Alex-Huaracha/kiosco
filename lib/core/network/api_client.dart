@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:hgtrack/features/authentication/data/models/empleado_con_actividades.dart';
 import 'package:hgtrack/features/time_tracking/data/models/detalle_body.dart';
 import 'package:hgtrack/features/time_tracking/data/models/detalle_orden_trabajo.dart';
+import 'package:hgtrack/features/time_tracking/data/models/gestion_estado_response.dart';
 
 /// Cliente HTTP para comunicacion con el backend HG API.
 /// 
@@ -110,18 +111,9 @@ class TrackingApi {
     return '$year-$month-$day $hour:$minute:$second.$millisecond';
   }
 
-  /// Finaliza una Tarea Principal (TP) enviando tiempos y observaciones al backend.
-  /// 
-  /// [idDetalleOrdenTrabajo] - ID del detalle de orden de trabajo
-  /// [idEmpleadoExt] - ID externo del empleado
-  /// [cargoEmpleado] - Cargo del empleado
-  /// [nombreEmpleado] - Nombre completo del empleado (APELLIDOS, NOMBRES)
-  /// [tiempoInicio] - Fecha/hora de inicio del trabajo
-  /// [tiempoFin] - Fecha/hora de fin del trabajo
-  /// [minutosEmpleado] - Total de minutos trabajados
-  /// [observaciones] - Observaciones opcionales
-  /// 
-  /// Retorna el DTO actualizado en caso de exito, null en caso de error
+  /// OBSOLETO: Reemplazado por gestionarEstadoActividadTP() con acción FINALIZAR.
+  /// Mantenido temporalmente para referencia, pero NO debe usarse en código nuevo.
+  @Deprecated('Usar gestionarEstadoActividadTP() con accion FINALIZAR')
   Future<HgDetalleOrdenTrabajoDto?> finalizarActividadEmpleado({
     required int idDetalleOrdenTrabajo,
     required String idEmpleadoExt,
@@ -279,15 +271,85 @@ class TrackingApi {
     }
   }
 
-  /// Registra una nueva pausa para Tarea Principal (TP - DetalleOrdenTrabajo).
-  /// 
-  /// Llama al endpoint /gestionarpausadetalleordentrabajo para crear un registro de pausa.
-  /// 
+  /// Gestiona el estado de una Tarea Principal (TP) usando endpoint unificado.
+  ///
+  /// Este método reemplaza los endpoints fragmentados anteriores:
+  /// - INICIAR: Registra dtiempoinicio
+  /// - PAUSAR: Crea nueva pausa (requiere cmotivo)
+  /// - REANUDAR: Cierra pausa activa (idpausa es opcional - backend busca automáticamente)
+  /// - FINALIZAR: Registra dtiempofin y bcerrada (backend calcula tiempo automáticamente)
+  ///
   /// [idDetalleOrdenTrabajo] - ID del detalle de orden de trabajo
-  /// [motivo] - Motivo de la pausa (máximo 500 caracteres)
-  /// [tiempoInicio] - Timestamp de inicio de pausa
-  /// 
-  /// Retorna el ID de la pausa creada en caso de éxito, null en caso de error
+  /// [accion] - Acción a ejecutar: "INICIAR", "PAUSAR", "REANUDAR", "FINALIZAR"
+  /// [timestamp] - Fecha/hora de la acción (formato: yyyy-MM-dd HH:mm:ss.SSS)
+  /// [cmotivo] - Motivo de pausa (REQUERIDO para PAUSAR)
+  /// [cobservaciones] - Observaciones opcionales (para FINALIZAR)
+  /// [nminutosemp] - OPCIONAL: Minutos empleados. Si se omite, el backend calcula automáticamente
+  /// [idpausa] - ID de pausa específica (OPCIONAL para REANUDAR)
+  ///
+  /// IMPORTANTE sobre idpausa:
+  /// En el 99% de casos NO es necesario enviar idpausa en REANUDAR.
+  /// El backend busca automáticamente la pausa activa más reciente.
+  /// Solo usar idpausa para casos especiales de corrección manual.
+  ///
+  /// Retorna [GestionEstadoResponse] en caso de éxito, null en caso de error.
+  Future<GestionEstadoResponse?> gestionarEstadoActividadTP({
+    required int idDetalleOrdenTrabajo,
+    required String accion,
+    required DateTime timestamp,
+    String? cmotivo,
+    String? cobservaciones,
+    String? nminutosemp,
+    int? idpausa,
+  }) async {
+    var client = http.Client();
+    var url = '$_hgapiEndpoint/gestionarestadoactividad';
+    var uri = Uri.parse(url);
+
+    // Construir request body con campos obligatorios
+    Map<String, dynamic> requestBody = {
+      "iddetalleordentrabajo": idDetalleOrdenTrabajo.toString(),
+      "accion": accion,
+      "timestamp": _formatFecha(timestamp),
+    };
+
+    // Agregar campos opcionales/condicionales
+    if (cmotivo != null) requestBody["cmotivo"] = cmotivo;
+    if (cobservaciones != null) requestBody["cobservaciones"] = cobservaciones;
+    if (nminutosemp != null) requestBody["nminutosemp"] = nminutosemp;
+    if (idpausa != null) requestBody["idpausa"] = idpausa.toString();
+
+    String jsonBody = jsonEncode(requestBody);
+
+    try {
+      var response = await client.post(
+        uri,
+        headers: {"Content-Type": "application/json"},
+        body: jsonBody,
+      );
+
+      if (response.statusCode == 200) {
+        print("✅ Acción $accion ejecutada exitosamente (TP)");
+
+        // Parsear respuesta a DTO
+        final jsonResponse =
+            jsonDecode(const Utf8Decoder().convert(response.bodyBytes));
+        return GestionEstadoResponse.fromJson(jsonResponse);
+      } else {
+        print(
+            "❌ Error al gestionar estado TP ($accion): Código ${response.statusCode}");
+        print("Mensaje: ${response.body}");
+        return null;
+      }
+    } catch (e) {
+      print("❌ Excepción al gestionar estado TP ($accion): $e");
+      return null;
+    }
+  }
+
+  /// OBSOLETO: Reemplazado por gestionarEstadoActividadTP() con acción PAUSAR.
+  /// Mantenido temporalmente para referencia, pero NO debe usarse en código nuevo.
+  @Deprecated('Usar gestionarEstadoActividadTP() con accion PAUSAR')
   Future<int?> registrarPausaTP({
     required int idDetalleOrdenTrabajo,
     required String motivo,
@@ -312,7 +374,7 @@ class TrackingApi {
 
       if (response.statusCode == 200) {
         print("Pausa TP registrada exitosamente");
-        
+
         final jsonResponse =
             jsonDecode(const Utf8Decoder().convert(response.bodyBytes));
         return jsonResponse['id'] as int?;
@@ -327,15 +389,9 @@ class TrackingApi {
     }
   }
 
-  /// Reanuda una pausa existente para Tarea Principal (TP - DetalleOrdenTrabajo).
-  /// 
-  /// Llama al endpoint /gestionarpausadetalleordentrabajo para actualizar el registro de pausa.
-  /// El backend calcula automáticamente los minutos de pausa.
-  /// 
-  /// [idPausa] - ID de la pausa retornado al crearla
-  /// [tiempoFin] - Timestamp de fin de pausa
-  /// 
-  /// Retorna true en caso de éxito, false en caso de error
+  /// OBSOLETO: Reemplazado por gestionarEstadoActividadTP() con acción REANUDAR.
+  /// Mantenido temporalmente para referencia, pero NO debe usarse en código nuevo.
+  @Deprecated('Usar gestionarEstadoActividadTP() con accion REANUDAR')
   Future<bool> reanudarPausaTP({
     required int idPausa,
     required DateTime tiempoFin,

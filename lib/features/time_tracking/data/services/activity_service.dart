@@ -2,6 +2,7 @@ import 'package:hgtrack/core/network/api_client.dart';
 import 'package:hgtrack/features/authentication/data/models/empleado.dart';
 import 'package:hgtrack/features/time_tracking/data/models/actividad.dart';
 import 'package:hgtrack/features/time_tracking/data/models/detalle_orden_trabajo.dart';
+import 'package:hgtrack/features/time_tracking/data/models/gestion_estado_response.dart';
 
 /// Servicio para operaciones de actividades.
 ///
@@ -10,6 +11,123 @@ import 'package:hgtrack/features/time_tracking/data/models/detalle_orden_trabajo
 ///
 /// Este servicio maneja la finalizacion de actividades tanto TP como ST.
 class ActivityService {
+  // ========================================================================
+  // NUEVOS MÉTODOS - Endpoint Unificado /gestionarestadoactividad
+  // ========================================================================
+
+  /// Inicia una Tarea Principal (TP) en el backend usando endpoint unificado.
+  ///
+  /// [idDetalleOrdenTrabajo] - ID del detalle de orden de trabajo
+  /// [timestamp] - Fecha/hora de inicio
+  ///
+  /// Retorna [GestionEstadoResponse] en caso de éxito, null en caso de error.
+  Future<GestionEstadoResponse?> iniciarActividadTP({
+    required int idDetalleOrdenTrabajo,
+    required DateTime timestamp,
+  }) async {
+    try {
+      final api = TrackingApi();
+      return await api.gestionarEstadoActividadTP(
+        idDetalleOrdenTrabajo: idDetalleOrdenTrabajo,
+        accion: "INICIAR",
+        timestamp: timestamp,
+      );
+    } catch (e) {
+      print("Error al iniciar actividad TP: $e");
+      return null;
+    }
+  }
+
+  /// Pausa una Tarea Principal (TP) en el backend usando endpoint unificado.
+  ///
+  /// [idDetalleOrdenTrabajo] - ID del detalle de orden de trabajo
+  /// [motivo] - Motivo de la pausa (requerido)
+  /// [timestamp] - Fecha/hora de la pausa
+  ///
+  /// Retorna [GestionEstadoResponse] con idpausa en caso de éxito, null en caso de error.
+  Future<GestionEstadoResponse?> pausarActividadTP({
+    required int idDetalleOrdenTrabajo,
+    required String motivo,
+    required DateTime timestamp,
+  }) async {
+    try {
+      final api = TrackingApi();
+      return await api.gestionarEstadoActividadTP(
+        idDetalleOrdenTrabajo: idDetalleOrdenTrabajo,
+        accion: "PAUSAR",
+        timestamp: timestamp,
+        cmotivo: motivo,
+      );
+    } catch (e) {
+      print("Error al pausar actividad TP: $e");
+      return null;
+    }
+  }
+
+  /// Reanuda una Tarea Principal (TP) en el backend usando endpoint unificado.
+  ///
+  /// [idDetalleOrdenTrabajo] - ID del detalle de orden de trabajo
+  /// [timestamp] - Fecha/hora de reanudación
+  ///
+  /// NOTA: No enviamos idpausa - el backend busca automáticamente la pausa
+  /// activa más reciente. Solo en casos especiales se necesitaría enviar idpausa.
+  ///
+  /// Retorna [GestionEstadoResponse] en caso de éxito, null en caso de error.
+  Future<GestionEstadoResponse?> reanudarActividadTP({
+    required int idDetalleOrdenTrabajo,
+    required DateTime timestamp,
+  }) async {
+    try {
+      final api = TrackingApi();
+      return await api.gestionarEstadoActividadTP(
+        idDetalleOrdenTrabajo: idDetalleOrdenTrabajo,
+        accion: "REANUDAR",
+        timestamp: timestamp,
+        // NO enviar idpausa - el backend lo maneja automáticamente
+      );
+    } catch (e) {
+      print("Error al reanudar actividad TP: $e");
+      return null;
+    }
+  }
+
+  /// Finaliza una Tarea Principal (TP) en el backend usando endpoint unificado.
+  ///
+  /// IMPORTANTE: El backend calcula automáticamente el tiempo efectivo trabajado
+  /// como: (tiempo_fin - tiempo_inicio) - suma_pausas
+  ///
+  /// [idDetalleOrdenTrabajo] - ID del detalle de orden de trabajo
+  /// [timestamp] - Fecha/hora de finalización
+  /// [minutosEmpleado] - OPCIONAL: Total de minutos trabajados (sin contar pausas).
+  ///                     Si se omite, el backend lo calcula automáticamente.
+  /// [observaciones] - Observaciones opcionales del técnico
+  ///
+  /// Retorna [GestionEstadoResponse] en caso de éxito, null en caso de error.
+  Future<GestionEstadoResponse?> finalizarActividadTPNuevo({
+    required int idDetalleOrdenTrabajo,
+    required DateTime timestamp,
+    int? minutosEmpleado,
+    String? observaciones,
+  }) async {
+    try {
+      final api = TrackingApi();
+      return await api.gestionarEstadoActividadTP(
+        idDetalleOrdenTrabajo: idDetalleOrdenTrabajo,
+        accion: "FINALIZAR",
+        timestamp: timestamp,
+        nminutosemp: minutosEmpleado?.toString(),
+        cobservaciones: observaciones,
+      );
+    } catch (e) {
+      print("Error al finalizar actividad TP: $e");
+      return null;
+    }
+  }
+
+  // ========================================================================
+  // MÉTODOS EXISTENTES (Mantenidos para compatibilidad)
+  // ========================================================================
+
   /// Finaliza una Tarea Principal (TP) enviando datos de tiempo al backend
   ///
   /// [actividad] - Detalle de la actividad a finalizar
