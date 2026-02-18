@@ -49,22 +49,27 @@ class EmpleadoPrincipalDto {
   bool get sinAsignar => cnombreemp == null || cnombreemp == "Sin asignar";
 }
 
-/// Modelo de una pausa registrada en backend (v2.2+).
+/// Modelo de una pausa registrada en backend (v2.0 — API de Pausas con Motivos).
+///
+/// BREAKING CHANGE v2: el campo [cmotivo] fue reemplazado por [idmotivo] + [cmotivoOtro].
 ///
 /// Campos:
 /// - [id]            ID único de la pausa en BD
-/// - [cmotivo]       Texto del motivo de pausa
+/// - [idmotivo]      ID del motivo del catálogo (1-8). Ver GET /catalogomotivopausas
+/// - [cmotivoOtro]   Descripción libre. Solo presente cuando [idmotivo] == 8 ("Otro")
 /// - [dtiempoinicio] Timestamp ISO8601 de inicio de la pausa
 /// - [dtiempofin]    Timestamp ISO8601 de fin/reanudación. null = pausa activa
 class PausaDto {
   final int id;
-  final String cmotivo;
+  final int idmotivo;
+  final String? cmotivoOtro;
   final DateTime dtiempoinicio;
   final DateTime? dtiempofin;
 
   const PausaDto({
     required this.id,
-    required this.cmotivo,
+    required this.idmotivo,
+    this.cmotivoOtro,
     required this.dtiempoinicio,
     this.dtiempofin,
   });
@@ -72,10 +77,14 @@ class PausaDto {
   /// Indica si esta pausa sigue activa (sin reanudación)
   bool get estaActiva => dtiempofin == null;
 
+  /// true si el motivo es "Otro" (id=8)
+  bool get esMotivOtro => idmotivo == 8;
+
   factory PausaDto.fromJson(Map<String, dynamic> json) {
     return PausaDto(
       id: json["id"] as int,
-      cmotivo: json["cmotivo"] as String? ?? '',
+      idmotivo: json["idmotivo"] as int? ?? 1,
+      cmotivoOtro: json["cmotivoOtro"] as String?,
       dtiempoinicio: _parseDateTime(json["dtiempoinicio"])!,
       dtiempofin: _parseDateTime(json["dtiempofin"]),
     );
@@ -83,7 +92,8 @@ class PausaDto {
 
   Map<String, dynamic> toJson() => {
         "id": id,
-        "cmotivo": cmotivo,
+        "idmotivo": idmotivo,
+        "cmotivoOtro": cmotivoOtro,
         "dtiempoinicio": dtiempoinicio.toIso8601String(),
         "dtiempofin": dtiempofin?.toIso8601String(),
       };

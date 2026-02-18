@@ -41,13 +41,15 @@ class ActivityService {
   /// Pausa una Tarea Principal (TP) en el backend usando endpoint unificado.
   ///
   /// [idDetalleOrdenTrabajo] - ID del detalle de orden de trabajo
-  /// [motivo] - Motivo de la pausa (requerido)
+  /// [idmotivo] - ID del motivo del catálogo (1-8, REQUERIDO)
+  /// [cmotivoOtro] - Descripción libre (solo cuando idmotivo=8, null en otro caso)
   /// [timestamp] - Fecha/hora de la pausa
   ///
   /// Retorna [GestionEstadoResponse] con idpausa en caso de éxito, null en caso de error.
   Future<GestionEstadoResponse?> pausarActividadTP({
     required int idDetalleOrdenTrabajo,
-    required String motivo,
+    required int idmotivo,
+    String? cmotivoOtro,
     required DateTime timestamp,
   }) async {
     try {
@@ -56,7 +58,8 @@ class ActivityService {
         idDetalleOrdenTrabajo: idDetalleOrdenTrabajo,
         accion: "PAUSAR",
         timestamp: timestamp,
-        cmotivo: motivo,
+        idmotivo: idmotivo,
+        cmotivoOtro: cmotivoOtro,
       );
     } catch (e) {
       print("Error al pausar actividad TP: $e");

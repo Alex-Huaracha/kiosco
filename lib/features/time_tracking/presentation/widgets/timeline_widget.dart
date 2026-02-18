@@ -1,20 +1,26 @@
 import 'package:flutter/material.dart';
 
 import 'package:hgtrack/core/theme/app_colors.dart';
+import 'package:hgtrack/features/time_tracking/data/models/motivo_pausa.dart';
 import 'package:hgtrack/features/time_tracking/domain/tracking_state.dart';
 
-/// Widget de timeline que muestra el historial de ejecución de la actividad
-/// 
+/// Widget de timeline que muestra el historial de ejecución de la actividad.
+///
 /// Muestra todos los eventos (inicio, pausa, reanudación, finalización) con
 /// iconos, tiempos y duraciones trabajadas. Incluye un resumen del tiempo total.
+///
+/// [catalogoMotivos] se usa para mostrar el nombre del motivo de pausa.
+/// Si está vacío, se muestra el ID como fallback.
 class TimelineWidget extends StatelessWidget {
   final List<PeriodoTrabajo> periodos;
   final Duration tiempoTotalTrabajado;
+  final List<MotivoPausa> catalogoMotivos;
 
   const TimelineWidget({
     super.key,
     required this.periodos,
     required this.tiempoTotalTrabajado,
+    this.catalogoMotivos = const [],
   });
 
   @override
@@ -91,6 +97,7 @@ class TimelineWidget extends StatelessWidget {
               return _TimelineItem(
                 periodo: periodo,
                 isLast: isLast,
+                catalogoMotivos: catalogoMotivos,
               );
             }),
 
@@ -142,11 +149,27 @@ class TimelineWidget extends StatelessWidget {
 class _TimelineItem extends StatelessWidget {
   final PeriodoTrabajo periodo;
   final bool isLast;
+  final List<MotivoPausa> catalogoMotivos;
 
   const _TimelineItem({
     required this.periodo,
     required this.isLast,
+    this.catalogoMotivos = const [],
   });
+
+  /// Resuelve el texto a mostrar para el motivo de una pausa.
+  String _resolverMotivo(PeriodoTrabajo p) {
+    final id = p.idmotivo;
+    if (id == null) return '';
+    if (id == 8) {
+      return p.cmotivoOtro?.isNotEmpty == true ? p.cmotivoOtro! : 'Otro';
+    }
+    try {
+      return catalogoMotivos.firstWhere((m) => m.id == id).cnombre;
+    } catch (_) {
+      return 'Motivo #$id';
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -226,10 +249,9 @@ class _TimelineItem extends StatelessWidget {
                     color: AppColors.textSecondary,
                   ),
                 ),
-                // Mostrar motivo si es una pausa y tiene motivo
-                if (periodo.tipo == TipoEvento.pausa && 
-                    periodo.motivo != null &&
-                    periodo.motivo!.isNotEmpty) ...[
+                // Mostrar motivo si es una pausa y tiene idmotivo
+                if (periodo.tipo == TipoEvento.pausa &&
+                    periodo.idmotivo != null) ...[
                   const SizedBox(height: 4),
                   Row(
                     children: [
@@ -241,7 +263,7 @@ class _TimelineItem extends StatelessWidget {
                       const SizedBox(width: 4),
                       Flexible(
                         child: Text(
-                          'Motivo: ${periodo.motivo}',
+                          'Motivo: ${_resolverMotivo(periodo)}',
                           style: const TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w500,

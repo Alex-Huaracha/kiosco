@@ -8,6 +8,7 @@ import 'package:hgtrack/core/theme/app_colors.dart';
 import 'package:hgtrack/features/authentication/data/models/empleado.dart';
 import 'package:hgtrack/features/time_tracking/data/models/actividad.dart';
 import 'package:hgtrack/features/time_tracking/data/models/detalle_orden_trabajo.dart';
+import 'package:hgtrack/features/time_tracking/data/models/motivo_pausa.dart';
 import 'package:hgtrack/features/time_tracking/data/models/orden_trabajo.dart';
 import 'package:hgtrack/features/time_tracking/data/models/pending_sync_activity.dart';
 import 'package:hgtrack/features/time_tracking/data/services/activity_service.dart';
@@ -56,6 +57,9 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
   bool _isLoading = true;
   bool _isSaving = false;
 
+  // Catálogo de motivos de pausa (cargado una vez, cacheado en estado local)
+  List<MotivoPausa> _catalogoMotivos = [];
+
   // Conectividad
   bool _isOnline = true;
   StreamSubscription<bool>? _connectivitySubscription;
@@ -65,6 +69,18 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
     super.initState();
     _initConnectivity();
     _loadState();
+    _loadCatalogoMotivos();
+  }
+
+  /// Carga el catálogo de motivos de pausa desde el backend y lo cachea en estado local.
+  /// Se llama una sola vez al abrir la pantalla.
+  Future<void> _loadCatalogoMotivos() async {
+    final catalogo = await TrackingApi().getCatalogoMotivoPausas();
+    if (catalogo != null && mounted) {
+      setState(() {
+        _catalogoMotivos = catalogo;
+      });
+    }
   }
 
   @override
@@ -160,7 +176,8 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
         inicio: pausa.dtiempoinicio,
         fin: pausa.dtiempofin,
         tipo: TipoEvento.pausa,
-        motivo: pausa.cmotivo,
+        idmotivo: pausa.idmotivo,
+        cmotivoOtro: pausa.cmotivoOtro,
       ));
 
       // Si la pausa fue cerrada, el próximo periodo arranca desde el fin de pausa
@@ -329,11 +346,11 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
   Future<void> _onPausar() async {
     if (_trackingState == null) return;
 
-    // 1. Mostrar dialog para seleccionar motivo
-    final motivo = await PauseReasonDialog.show(context);
+    // 1. Mostrar dialog para seleccionar motivo (catálogo ya cacheado)
+    final resultado = await PauseReasonDialog.show(context, _catalogoMotivos);
 
     // Si el usuario canceló, no hacer nada
-    if (motivo == null) return;
+    if (resultado == null) return;
 
     // 2. Verificar conexión (requerida para pausar)
     if (!_isOnline) {
@@ -358,7 +375,7 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
       int? idPausaBackend;
 
       if (esSubTarea) {
-        // Sub-Tarea (ST) - usar endpoint específico (sin cambios)
+        // Sub-Tarea (ST) - usar endpoint específico con nuevo contrato
         final idAsignacion = widget.actividadConOt?.idAsignacion;
         if (idAsignacion == null) {
           throw Exception('ID de asignación no disponible para Sub-Tarea');
@@ -366,15 +383,17 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
 
         idPausaBackend = await TrackingApi().registrarPausaST(
           idDetalleAsignacion: idAsignacion,
-          motivo: motivo,
+          idmotivo: resultado.idmotivo,
+          cmotivoOtro: resultado.cmotivoOtro,
           tiempoInicio: ahora,
         );
       } else {
-        // Tarea Principal (TP) - usar NUEVO endpoint unificado
+        // Tarea Principal (TP) - usar endpoint unificado con nuevo contrato
         final service = ActivityService();
         final response = await service.pausarActividadTP(
           idDetalleOrdenTrabajo: widget.actividad.id!,
-          motivo: motivo,
+          idmotivo: resultado.idmotivo,
+          cmotivoOtro: resultado.cmotivoOtro,
           timestamp: ahora,
         );
 
@@ -389,10 +408,11 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
         throw Exception('No se recibió ID de pausa del servidor');
       }
 
-      // Actualizar estado local con motivo e ID de pausa
+      // Actualizar estado local con idmotivo, cmotivoOtro e ID de pausa
       setState(() {
         _trackingState = _trackingState!.pausar(
-          motivo: motivo,
+          idmotivo: resultado.idmotivo,
+          cmotivoOtro: resultado.cmotivoOtro,
           idPausaBackend: idPausaBackend,
         );
       });
@@ -1163,6 +1183,7 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
               TimelineWidget(
                 periodos: _trackingState!.periodos,
                 tiempoTotalTrabajado: _trackingState!.tiempoTotalTrabajado,
+                catalogoMotivos: _catalogoMotivos,
               ),
 
             const SizedBox(height: 80),
@@ -1237,6 +1258,7 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
                           periodos: _trackingState!.periodos,
                           tiempoTotalTrabajado:
                               _trackingState!.tiempoTotalTrabajado,
+                          catalogoMotivos: _catalogoMotivos,
                         ),
                     ],
                   ),

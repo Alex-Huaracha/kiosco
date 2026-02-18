@@ -8,6 +8,7 @@ import 'package:hgtrack/features/authentication/data/models/empleado_con_activid
 import 'package:hgtrack/features/time_tracking/data/models/detalle_body.dart';
 import 'package:hgtrack/features/time_tracking/data/models/detalle_orden_trabajo.dart';
 import 'package:hgtrack/features/time_tracking/data/models/gestion_estado_response.dart';
+import 'package:hgtrack/features/time_tracking/data/models/motivo_pausa.dart';
 
 /// Cliente HTTP para comunicacion con el backend HG API.
 /// 
@@ -271,18 +272,51 @@ class TrackingApi {
     }
   }
 
+  /// Obtiene el catálogo de motivos de pausa del backend.
+  ///
+  /// Llama a GET /api/v1/catalogomotivopausas y retorna la lista de motivos activos.
+  /// Se recomienda llamar una sola vez y cachear el resultado en el estado de la página.
+  ///
+  /// El motivo con id=8 ("Otro") requiere que el usuario ingrese texto libre al pausar.
+  ///
+  /// Retorna la lista de [MotivoPausa] en caso de éxito, null en caso de error.
+  Future<List<MotivoPausa>?> getCatalogoMotivoPausas() async {
+    var client = http.Client();
+    var url = '$_hgapiEndpoint/catalogomotivopausas';
+    var uri = Uri.parse(url);
+
+    try {
+      var response = await client.get(
+        uri,
+        headers: {"Content-Type": "application/json"},
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = const Utf8Decoder().convert(response.bodyBytes);
+        return motivoPausaListFromJson(decoded);
+      } else {
+        print("❌ Error al obtener catálogo de motivos: ${response.statusCode}");
+        return null;
+      }
+    } catch (e) {
+      print("❌ Excepción al obtener catálogo de motivos: $e");
+      return null;
+    }
+  }
+
   /// Gestiona el estado de una Tarea Principal (TP) usando endpoint unificado.
   ///
   /// Este método reemplaza los endpoints fragmentados anteriores:
   /// - INICIAR: Registra dtiempoinicio
-  /// - PAUSAR: Crea nueva pausa (requiere cmotivo)
+  /// - PAUSAR: Crea nueva pausa (requiere idmotivo + cmotivoOtro si id=8)
   /// - REANUDAR: Cierra pausa activa (idpausa es opcional - backend busca automáticamente)
   /// - FINALIZAR: Registra dtiempofin y bcerrada (backend calcula tiempo automáticamente)
   ///
   /// [idDetalleOrdenTrabajo] - ID del detalle de orden de trabajo
   /// [accion] - Acción a ejecutar: "INICIAR", "PAUSAR", "REANUDAR", "FINALIZAR"
   /// [timestamp] - Fecha/hora de la acción (formato: yyyy-MM-dd HH:mm:ss.SSS)
-  /// [cmotivo] - Motivo de pausa (REQUERIDO para PAUSAR)
+  /// [idmotivo] - ID del motivo del catálogo (REQUERIDO para PAUSAR)
+  /// [cmotivoOtro] - Descripción libre (solo cuando idmotivo=8, null en otro caso)
   /// [cobservaciones] - Observaciones opcionales (para FINALIZAR)
   /// [nminutosemp] - OPCIONAL: Minutos empleados. Si se omite, el backend calcula automáticamente
   /// [idpausa] - ID de pausa específica (OPCIONAL para REANUDAR)
@@ -297,7 +331,8 @@ class TrackingApi {
     required int idDetalleOrdenTrabajo,
     required String accion,
     required DateTime timestamp,
-    String? cmotivo,
+    int? idmotivo,
+    String? cmotivoOtro,
     String? cobservaciones,
     String? nminutosemp,
     int? idpausa,
@@ -314,7 +349,8 @@ class TrackingApi {
     };
 
     // Agregar campos opcionales/condicionales
-    if (cmotivo != null) requestBody["cmotivo"] = cmotivo;
+    if (idmotivo != null) requestBody["idmotivo"] = idmotivo.toString();
+    if (cmotivoOtro != null) requestBody["cmotivoOtro"] = cmotivoOtro;
     if (cobservaciones != null) requestBody["cobservaciones"] = cobservaciones;
     if (nminutosemp != null) requestBody["nminutosemp"] = nminutosemp;
     if (idpausa != null) requestBody["idpausa"] = idpausa.toString();
@@ -427,28 +463,33 @@ class TrackingApi {
   }
 
   /// Registra una nueva pausa para Sub-Tarea (ST - DetalleAsignacion).
-  /// 
+  ///
   /// Llama al endpoint /gestionarpausadetalleasignacion para crear un registro de pausa.
-  /// 
+  ///
   /// [idDetalleAsignacion] - ID de la asignación (empleado asistente)
-  /// [motivo] - Motivo de la pausa (máximo 500 caracteres)
+  /// [idmotivo] - ID del motivo del catálogo (1-8)
+  /// [cmotivoOtro] - Descripción libre (solo cuando idmotivo=8, null en otro caso)
   /// [tiempoInicio] - Timestamp de inicio de pausa
-  /// 
+  ///
   /// Retorna el ID de la pausa creada en caso de éxito, null en caso de error
   Future<int?> registrarPausaST({
     required int idDetalleAsignacion,
-    required String motivo,
+    required int idmotivo,
+    String? cmotivoOtro,
     required DateTime tiempoInicio,
   }) async {
     var client = http.Client();
     var url = '$_hgapiEndpoint/gestionarpausadetalleasignacion';
     var uri = Uri.parse(url);
 
-    String jsonBody = jsonEncode({
+    final Map<String, dynamic> body = {
       "iddetalleasignacion": idDetalleAsignacion.toString(),
-      "cmotivo": motivo,
+      "idmotivo": idmotivo.toString(),
       "dtiempoinicio": _formatFecha(tiempoInicio),
-    });
+    };
+    if (cmotivoOtro != null) body["cmotivoOtro"] = cmotivoOtro;
+
+    String jsonBody = jsonEncode(body);
 
     try {
       var response = await client.post(

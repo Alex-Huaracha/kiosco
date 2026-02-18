@@ -1,37 +1,52 @@
 import 'package:flutter/material.dart';
 
 import 'package:hgtrack/core/theme/app_colors.dart';
+import 'package:hgtrack/features/time_tracking/data/models/motivo_pausa.dart';
 
-/// Motivos predefinidos de pausa
-enum MotivosPausa {
-  serviciosHigienicos('Servicios higiénicos', Icons.wc),
-  reasignacionTarea('Re-asignación de tarea', Icons.swap_horiz),
-  faltaRepuesto('Falta de repuesto', Icons.inventory_2),
-  faltaHerramienta('Falta de herramienta', Icons.build),
-  alimentacion('Alimentación', Icons.restaurant),
-  finTurno('Fin de turno', Icons.access_time),
-  auxilioMecanico('Auxilio mecánico', Icons.engineering),
-  otro('Otro (especificar)', Icons.edit_note);
+/// Mapeo local de ID de motivo → icono visual.
+/// Mantiene la experiencia visual del grid aunque el catálogo venga del backend.
+const Map<int, IconData> _iconosPorMotivo = {
+  1: Icons.wc,              // Servicios Higiénicos
+  2: Icons.swap_horiz,      // Re-asignación de Tarea
+  3: Icons.inventory_2,     // Falta de Repuesto
+  4: Icons.build,           // Falta de Herramienta
+  5: Icons.restaurant,      // Alimentación
+  6: Icons.access_time,     // Fin de Turno
+  7: Icons.engineering,     // Auxilio Mecánico
+  8: Icons.edit_note,       // Otro
+};
 
-  final String label;
-  final IconData icon;
-
-  const MotivosPausa(this.label, this.icon);
+IconData _iconoParaMotivo(int id) {
+  return _iconosPorMotivo[id] ?? Icons.help_outline;
 }
 
-/// Dialog para seleccionar el motivo de pausa
-/// Muestra lista de motivos predefinidos optimizados para tablet
-/// Si se selecciona "Otro", permite ingresar texto libre
+/// Dialog para seleccionar el motivo de pausa.
+///
+/// Recibe [catalogoMotivos] desde [ActivityDetailPage] (ya cacheado).
+/// Muestra un grid de botones con los motivos del catálogo.
+/// Si el usuario selecciona "Otro" (id=8), muestra un TextField adicional.
+///
+/// Retorna [PauseReasonResult] con [idmotivo] y [cmotivoOtro], o null si cancela.
 class PauseReasonDialog extends StatefulWidget {
-  const PauseReasonDialog({super.key});
+  final List<MotivoPausa> catalogoMotivos;
 
-  /// Muestra el dialog y retorna el motivo seleccionado
-  /// Retorna null si el usuario cancela
-  static Future<String?> show(BuildContext context) async {
-    return showDialog<String>(
+  const PauseReasonDialog({
+    super.key,
+    required this.catalogoMotivos,
+  });
+
+  /// Muestra el dialog y retorna el resultado de la selección.
+  /// Retorna null si el usuario cancela.
+  ///
+  /// [catalogoMotivos] debe estar cacheado en la página que llama.
+  static Future<PauseReasonResult?> show(
+    BuildContext context,
+    List<MotivoPausa> catalogoMotivos,
+  ) async {
+    return showDialog<PauseReasonResult>(
       context: context,
-      barrierDismissible: false, // No cerrar al tocar fuera
-      builder: (context) => const PauseReasonDialog(),
+      barrierDismissible: false,
+      builder: (context) => PauseReasonDialog(catalogoMotivos: catalogoMotivos),
     );
   }
 
@@ -40,7 +55,7 @@ class PauseReasonDialog extends StatefulWidget {
 }
 
 class _PauseReasonDialogState extends State<PauseReasonDialog> {
-  MotivosPausa? _motivoSeleccionado;
+  MotivoPausa? _motivoSeleccionado;
   final _otroMotivoController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
@@ -62,17 +77,17 @@ class _PauseReasonDialogState extends State<PauseReasonDialog> {
       return;
     }
 
-    // Si seleccionó "Otro", validar que ingresó texto
-    if (_motivoSeleccionado == MotivosPausa.otro) {
-      if (!_formKey.currentState!.validate()) {
-        return;
-      }
-
-      // Retornar el texto ingresado
-      Navigator.of(context).pop(_otroMotivoController.text.trim());
+    // Si seleccionó "Otro" (id=8), validar que ingresó texto
+    if (_motivoSeleccionado!.esOtro) {
+      if (!_formKey.currentState!.validate()) return;
+      Navigator.of(context).pop(PauseReasonResult(
+        idmotivo: _motivoSeleccionado!.id,
+        cmotivoOtro: _otroMotivoController.text.trim(),
+      ));
     } else {
-      // Retornar el label del motivo predefinido
-      Navigator.of(context).pop(_motivoSeleccionado!.label);
+      Navigator.of(context).pop(PauseReasonResult(
+        idmotivo: _motivoSeleccionado!.id,
+      ));
     }
   }
 
@@ -118,7 +133,7 @@ class _PauseReasonDialogState extends State<PauseReasonDialog> {
                 ),
                 const SizedBox(height: 20),
 
-                // Grid de botones de motivos
+                // Grid de botones con motivos del catálogo
                 GridView.builder(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
@@ -128,15 +143,19 @@ class _PauseReasonDialogState extends State<PauseReasonDialog> {
                     mainAxisSpacing: 12,
                     childAspectRatio: isLandscape ? 3.2 : 4.5,
                   ),
-                  itemCount: MotivosPausa.values.length,
+                  itemCount: widget.catalogoMotivos.length,
                   itemBuilder: (context, index) {
-                    final motivo = MotivosPausa.values[index];
-                    final isSelected = _motivoSeleccionado == motivo;
+                    final motivo = widget.catalogoMotivos[index];
+                    final isSelected = _motivoSeleccionado?.id == motivo.id;
 
                     return InkWell(
                       onTap: () {
                         setState(() {
                           _motivoSeleccionado = motivo;
+                          // Limpiar texto de "Otro" si cambia de motivo
+                          if (!motivo.esOtro) {
+                            _otroMotivoController.clear();
+                          }
                         });
                       },
                       borderRadius: BorderRadius.circular(8),
@@ -160,7 +179,7 @@ class _PauseReasonDialogState extends State<PauseReasonDialog> {
                         child: Row(
                           children: [
                             Icon(
-                              motivo.icon,
+                              _iconoParaMotivo(motivo.id),
                               color: isSelected
                                   ? AppColors.primary
                                   : AppColors.textSecondary,
@@ -169,7 +188,7 @@ class _PauseReasonDialogState extends State<PauseReasonDialog> {
                             const SizedBox(width: 12),
                             Expanded(
                               child: Text(
-                                motivo.label,
+                                motivo.cnombre,
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: isSelected
@@ -194,13 +213,13 @@ class _PauseReasonDialogState extends State<PauseReasonDialog> {
                   },
                 ),
 
-                // Campo de texto para "Otro"
-                if (_motivoSeleccionado == MotivosPausa.otro) ...[
+                // Campo de texto adicional cuando se selecciona "Otro" (id=8)
+                if (_motivoSeleccionado?.esOtro == true) ...[
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: _otroMotivoController,
                     autofocus: true,
-                    maxLength: 100,
+                    maxLength: 500,
                     decoration: const InputDecoration(
                       labelText: 'Especifique el motivo',
                       hintText: 'Ingrese el motivo de la pausa',

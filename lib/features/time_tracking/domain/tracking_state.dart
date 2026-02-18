@@ -106,7 +106,11 @@ class ActividadTrackingState {
   }
 
   /// Pausa la actividad
-  ActividadTrackingState pausar({required String motivo, int? idPausaBackend}) {
+  ActividadTrackingState pausar({
+    required int idmotivo,
+    String? cmotivoOtro,
+    int? idPausaBackend,
+  }) {
     if (estado != EstadoActividad.enProceso) {
       throw StateError('Solo se puede pausar una actividad en proceso');
     }
@@ -126,7 +130,8 @@ class ActividadTrackingState {
     nuevoPeriodos.add(PeriodoTrabajo(
       inicio: ahora,
       tipo: TipoEvento.pausa,
-      motivo: motivo,
+      idmotivo: idmotivo,
+      cmotivoOtro: cmotivoOtro,
     ));
 
     return ActividadTrackingState(
@@ -282,13 +287,20 @@ class PeriodoTrabajo {
   final DateTime inicio;
   final DateTime? fin;
   final TipoEvento tipo;
-  final String? motivo; // Motivo de pausa (solo para tipo == TipoEvento.pausa)
+
+  /// ID del motivo del catálogo (solo para tipo == TipoEvento.pausa).
+  /// Corresponde a GET /catalogomotivopausas (1-8).
+  final int? idmotivo;
+
+  /// Descripción libre del motivo (solo cuando idmotivo == 8, "Otro").
+  final String? cmotivoOtro;
 
   PeriodoTrabajo({
     required this.inicio,
     this.fin,
     required this.tipo,
-    this.motivo,
+    this.idmotivo,
+    this.cmotivoOtro,
   });
 
   /// Duración del periodo (null si no está cerrado)
@@ -303,7 +315,8 @@ class PeriodoTrabajo {
       inicio: inicio,
       fin: fechaFin,
       tipo: tipo,
-      motivo: motivo,
+      idmotivo: idmotivo,
+      cmotivoOtro: cmotivoOtro,
     );
   }
 
@@ -312,7 +325,8 @@ class PeriodoTrabajo {
       'inicio': inicio.toIso8601String(),
       'fin': fin?.toIso8601String(),
       'tipo': tipo.name,
-      'motivo': motivo,
+      'idmotivo': idmotivo,
+      'cmotivoOtro': cmotivoOtro,
     };
   }
 
@@ -324,7 +338,10 @@ class PeriodoTrabajo {
         (e) => e.name == json['tipo'],
         orElse: () => TipoEvento.inicio,
       ),
-      motivo: json['motivo'] as String?,
+      idmotivo: json['idmotivo'] as int?,
+      // Migración de estados guardados con campo antiguo 'motivo' (String)
+      // Si viene 'idmotivo' es v2, si no, ignorar el texto libre antiguo.
+      cmotivoOtro: json['cmotivoOtro'] as String?,
     );
   }
 }
