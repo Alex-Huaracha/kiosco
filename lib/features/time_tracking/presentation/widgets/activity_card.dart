@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:hgtrack/core/theme/app_colors.dart';
+import 'package:hgtrack/features/time_tracking/data/models/actividad.dart';
 import 'package:hgtrack/features/time_tracking/data/models/detalle_orden_trabajo.dart';
 import 'package:hgtrack/features/time_tracking/data/models/orden_trabajo.dart';
 import 'package:hgtrack/features/time_tracking/domain/tracking_state.dart';
@@ -32,11 +33,13 @@ class ActividadConOtCard extends StatelessWidget {
   /// Verifica si es una Sub-Tarea
   bool get _esSubTarea => item.esSubTarea;
 
-  /// Determina el estado visual de la actividad
-  /// Considera tanto datos de BD como tracking local de SharedPreferences
-  /// Nota: Backlog ya NO es un estado visual, solo se muestra como texto en el título
+  /// Determina el estado visual de la actividad.
+  ///
+  /// Prioridad:
+  ///   1. Estado local (SharedPreferences) — refleja acciones hechas en esta sesión
+  ///   2. cestadomovil calculado por backend — fuente de verdad para sesiones nuevas
   EstadoActividadCard get _estado {
-    // PRIORIDAD 1: Si hay estado local guardado (desde SharedPreferences), usarlo
+    // PRIORIDAD 1: estado guardado en SharedPreferences (sesión activa)
     if (item.estadoLocal != null) {
       switch (item.estadoLocal!) {
         case EstadoActividad.pausada:
@@ -50,18 +53,18 @@ class ActividadConOtCard extends StatelessWidget {
       }
     }
 
-    // PRIORIDAD 2: Si tiene tracking local pero no tiene estadoLocal guardado (legacy)
-    if (item.tieneTrackingLocal && item.localDtiempoinicio != null) {
-      return EstadoActividadCard.enProceso;
+    // PRIORIDAD 2: cestadomovil del backend (v2.2+)
+    switch (item.actividadDto?.cestadomovil) {
+      case EstadoMovil.enProceso:
+        return EstadoActividadCard.enProceso;
+      case EstadoMovil.pausada:
+        return EstadoActividadCard.pausada;
+      case EstadoMovil.terminada:
+        return EstadoActividadCard.finalizada;
+      case EstadoMovil.noIniciada:
+      default:
+        return EstadoActividadCard.noIniciada;
     }
-
-    // PRIORIDAD 3: Si tiene inicio en BD pero no fin, está en proceso
-    if (actividad.dtiempoinicio != null && actividad.dtiempofin == null) {
-      return EstadoActividadCard.enProceso;
-    }
-
-    // FALLBACK: No iniciada (pendiente)
-    return EstadoActividadCard.noIniciada;
   }
 
   /// Configuración de colores según estado
@@ -139,11 +142,8 @@ class ActividadConOtCard extends StatelessWidget {
     if (item.localDtiempoinicio != null) {
       return item.localDtiempoinicio;
     }
-    // Fallback a BD
-    if (actividad.dtiempoinicio != null) {
-      return DateTime.fromMillisecondsSinceEpoch(actividad.dtiempoinicio!);
-    }
-    return null;
+    // Fallback a BD (ya es DateTime? en v2.3)
+    return item.actividadDto?.dtiempoinicio;
   }
 
   /// Obtiene la hora de fin efectiva (prioriza tracking local sobre BD)
@@ -152,11 +152,8 @@ class ActividadConOtCard extends StatelessWidget {
     if (item.localDtiempofin != null) {
       return item.localDtiempofin;
     }
-    // Fallback a BD
-    if (actividad.dtiempofin != null) {
-      return DateTime.fromMillisecondsSinceEpoch(actividad.dtiempofin!);
-    }
-    return null;
+    // Fallback a BD (ya es DateTime? en v2.3)
+    return item.actividadDto?.dtiempofin;
   }
 
   /// Getters para condiciones de visualización

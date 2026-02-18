@@ -6,6 +6,7 @@ import 'package:hgtrack/core/network/api_client.dart';
 import 'package:hgtrack/core/network/connectivity_service.dart';
 import 'package:hgtrack/core/theme/app_colors.dart';
 import 'package:hgtrack/features/authentication/data/models/empleado.dart';
+import 'package:hgtrack/features/time_tracking/data/models/actividad.dart';
 import 'package:hgtrack/features/time_tracking/data/models/detalle_orden_trabajo.dart';
 import 'package:hgtrack/features/time_tracking/data/models/orden_trabajo.dart';
 import 'package:hgtrack/features/time_tracking/data/models/pending_sync_activity.dart';
@@ -86,21 +87,35 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
     });
   }
 
-  /// Carga el estado guardado o crea uno nuevo
+  /// Carga el estado guardado o lo reconstruye desde datos de BD.
+  ///
+  /// Prioridad:
+  ///   1. Estado local (SharedPreferences) — acciones de la sesión actual
+  ///   2. cestadomovil + pausas[] del backend — reconstrucción completa del historial
+  ///   3. Sin datos → estado inicial "No Iniciada"
   Future<void> _loadState() async {
     setState(() => _isLoading = true);
 
     try {
       final savedState = await _storageService.loadState(widget.actividad.id!);
 
+      ActividadTrackingState estadoInicial;
+
+      if (savedState != null) {
+        // CASO 1: hay estado local — usarlo directamente
+        estadoInicial = savedState;
+        print('📂 Estado cargado desde SharedPreferences: ${savedState.estado.name}');
+      } else {
+        // CASO 2: reconstruir desde datos del backend
+        estadoInicial = _reconstruirDesdeBackend();
+      }
+
       setState(() {
-        _trackingState =
-            savedState ?? ActividadTrackingState.inicial(widget.actividad.id!);
+        _trackingState = estadoInicial;
         _observacionesController.text = _trackingState?.observaciones ?? '';
         _isLoading = false;
       });
 
-      // Iniciar timer si está en proceso (para actualizar UI cada segundo)
       _startTimerIfNeeded();
     } catch (e) {
       print('Error al cargar estado: $e');
@@ -108,6 +123,111 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
         _trackingState = ActividadTrackingState.inicial(widget.actividad.id!);
         _isLoading = false;
       });
+    }
+  }
+
+  /// Reconstruye el [ActividadTrackingState] a partir de [cestadomovil] y [pausas]
+  /// del backend, cuando no hay estado guardado en SharedPreferences.
+  ///
+  /// Construye la lista de [PeriodoTrabajo] intercalando periodos de trabajo
+  /// y pausas, respetando el orden cronológico.
+  ActividadTrackingState _reconstruirDesdeBackend() {
+    final dto = widget.actividadConOt?.actividadDto;
+    final estadoMovil = dto?.cestadomovil;
+    final dtiempoinicio = dto?.dtiempoinicio;
+    final dtiempofin = dto?.dtiempofin;
+    final pausas = dto?.pausas ?? [];
+
+    // Sin datos de inicio → no iniciada
+    if (dtiempoinicio == null) {
+      return ActividadTrackingState.inicial(widget.actividad.id!);
+    }
+
+    // Construir lista de periodos desde el historial de pausas
+    final periodos = <PeriodoTrabajo>[];
+    DateTime cursorInicio = dtiempoinicio;
+
+    for (final pausa in pausas) {
+      // Periodo de trabajo antes de esta pausa
+      periodos.add(PeriodoTrabajo(
+        inicio: cursorInicio,
+        fin: pausa.dtiempoinicio,
+        tipo: periodos.isEmpty ? TipoEvento.inicio : TipoEvento.reanudacion,
+      ));
+
+      // Periodo de pausa
+      periodos.add(PeriodoTrabajo(
+        inicio: pausa.dtiempoinicio,
+        fin: pausa.dtiempofin,
+        tipo: TipoEvento.pausa,
+        motivo: pausa.cmotivo,
+      ));
+
+      // Si la pausa fue cerrada, el próximo periodo arranca desde el fin de pausa
+      if (pausa.dtiempofin != null) {
+        cursorInicio = pausa.dtiempofin!;
+      }
+    }
+
+    // Estado y periodo final según cestadomovil
+    switch (estadoMovil) {
+      case EstadoMovil.terminada:
+        // Cerrar el último periodo de trabajo con dtiempofin
+        final fin = dtiempofin ?? DateTime.now();
+        periodos.add(PeriodoTrabajo(
+          inicio: cursorInicio,
+          fin: fin,
+          tipo: periodos.isEmpty ? TipoEvento.inicio : TipoEvento.reanudacion,
+        ));
+        periodos.add(PeriodoTrabajo(
+          inicio: fin,
+          tipo: TipoEvento.finalizacion,
+        ));
+        print('✅ Reconstruido desde BD (Terminada): ${periodos.length} periodos');
+        return ActividadTrackingState(
+          idActividad: widget.actividad.id!,
+          estado: EstadoActividad.finalizada,
+          periodos: periodos,
+          observaciones: widget.actividad.cobservaciones,
+        );
+
+      case EstadoMovil.pausada:
+        // La última pausa sigue activa (dtiempofin == null)
+        // El periodo de trabajo ya fue agregado antes del loop hasta la pausa activa
+        // No agregar periodo de trabajo abierto
+        print('⏸️ Reconstruido desde BD (Pausada): ${periodos.length} periodos');
+        return ActividadTrackingState(
+          idActividad: widget.actividad.id!,
+          estado: EstadoActividad.pausada,
+          inicioActual: null,
+          periodos: periodos,
+          observaciones: widget.actividad.cobservaciones,
+        );
+
+      case EstadoMovil.enProceso:
+      default:
+        // Actividad en proceso: agregar periodo abierto desde cursorInicio
+        if (periodos.isEmpty) {
+          // Sin pausas previas: periodo de inicio sin cerrar
+          periodos.add(PeriodoTrabajo(
+            inicio: cursorInicio,
+            tipo: TipoEvento.inicio,
+          ));
+        } else {
+          // Con pausas previas cerradas: periodo de reanudación sin cerrar
+          periodos.add(PeriodoTrabajo(
+            inicio: cursorInicio,
+            tipo: TipoEvento.reanudacion,
+          ));
+        }
+        print('▶️ Reconstruido desde BD (En Proceso): ${periodos.length} periodos, inicio=$cursorInicio');
+        return ActividadTrackingState(
+          idActividad: widget.actividad.id!,
+          estado: EstadoActividad.enProceso,
+          inicioActual: cursorInicio,
+          periodos: periodos,
+          observaciones: widget.actividad.cobservaciones,
+        );
     }
   }
 

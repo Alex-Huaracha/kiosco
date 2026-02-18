@@ -7,6 +7,7 @@ import 'package:hgtrack/core/theme/app_colors.dart';
 import 'package:hgtrack/features/authentication/data/models/empleado.dart';
 import 'package:hgtrack/features/authentication/data/models/empleado_con_actividades.dart';
 import 'package:hgtrack/features/authentication/presentation/widgets/empleado_avatar.dart';
+import 'package:hgtrack/features/time_tracking/data/models/actividad.dart';
 import 'package:hgtrack/features/time_tracking/data/models/pending_sync_activity.dart';
 import 'package:hgtrack/features/time_tracking/data/services/local_storage_service.dart';
 import 'package:hgtrack/features/time_tracking/data/services/pending_sync_service.dart';
@@ -298,24 +299,20 @@ class _ActivitiesListPageState
     });
   }
 
-  /// Verifica si una actividad está en proceso
-  /// Considera tanto datos de BD como tracking local
+  /// Verifica si una actividad está en proceso o pausada (activa).
+  /// Prioriza tracking local; cae en cestadomovil de BD.
   bool _estaEnProceso(ActividadConOt item) {
-    // Si tiene tracking local, está en proceso
     if (item.tieneTrackingLocal && item.localDtiempoinicio != null) {
       return true;
     }
-    // Si tiene inicio en BD pero no fin, está en proceso
-    return item.actividad.dtiempoinicio != null && 
-           item.actividad.dtiempofin == null;
+    final estado = item.actividadDto?.cestadomovil;
+    return estado == EstadoMovil.enProceso || estado == EstadoMovil.pausada;
   }
 
-  /// Verifica si una actividad no ha sido iniciada
-  /// Considera tanto datos de BD como tracking local
+  /// Verifica si una actividad no ha sido iniciada.
   bool _noIniciada(ActividadConOt item) {
-    // No iniciada si no tiene tracking local NI inicio en BD
-    return !item.tieneTrackingLocal && 
-           item.actividad.dtiempoinicio == null;
+    if (item.tieneTrackingLocal) return false;
+    return item.actividadDto?.cestadomovil == EstadoMovil.noIniciada;
   }
 
   @override
