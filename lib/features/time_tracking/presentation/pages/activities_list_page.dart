@@ -204,10 +204,9 @@ class _ActivitiesListPageState
     // Enriquecer con datos locales de SharedPreferences
     await _enriquecerConDatosLocales(todasActividades, localStorageService);
 
-    // Filtrar solo actividades activas (no cerradas, incluye backlog)
-    List<ActividadConOt> actividadesActivas = todasActividades.where((item) {
-      return item.actividad.bcerrada != true;
-    }).toList();
+    // El backend ya filtra las actividades relevantes para el empleado
+    // No aplicamos filtro adicional por bcerrada
+    List<ActividadConOt> actividadesActivas = todasActividades;
 
     if (actividadesActivas.isEmpty) {
       setState(() {
