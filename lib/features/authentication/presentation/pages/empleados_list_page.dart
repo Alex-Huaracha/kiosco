@@ -333,7 +333,7 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
 
   /// Navega a la lista de actividades pasando los datos ya cargados
   void _onEmpleadoSelected(EmpleadoConActividades item) async {
-    final result = await Navigator.push(
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => ActivitiesListPage(
@@ -342,8 +342,8 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
       ),
     );
 
-    // Si hubo cambios (actividad finalizada), refrescar datos
-    if (result == true && mounted) {
+    // Siempre refrescar datos al regresar de la lista de actividades
+    if (mounted) {
       _backgroundRefresh();
     }
   }

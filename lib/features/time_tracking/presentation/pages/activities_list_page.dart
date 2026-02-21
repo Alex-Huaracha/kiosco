@@ -6,6 +6,7 @@ import 'package:hgtrack/core/network/connectivity_service.dart';
 import 'package:hgtrack/core/theme/app_colors.dart';
 import 'package:hgtrack/features/authentication/data/models/empleado.dart';
 import 'package:hgtrack/features/authentication/data/models/empleado_con_actividades.dart';
+import 'package:hgtrack/features/authentication/data/services/auth_service.dart';
 import 'package:hgtrack/features/authentication/presentation/widgets/empleado_avatar.dart';
 import 'package:hgtrack/features/time_tracking/data/models/actividad.dart';
 import 'package:hgtrack/features/time_tracking/data/models/pending_sync_activity.dart';
@@ -53,7 +54,7 @@ class _ActivitiesListPageState
   void initState() {
     super.initState();
     _initConnectivity();
-    _processActividades(); // Procesar actividades ya cargadas
+    _processActividades();
     _loadPendingCount();
     _autoSyncIfNeeded();
   }
@@ -581,59 +582,26 @@ class _ActivitiesListPageState
           actividad: item.actividad,
           ordentrabajo: item.ordentrabajo,
           empleado: widget.empleado,
-          actividadConOt: item, // Pasar item completo con info de TP/ST
+          actividadConOt: item,
         ),
       ),
     );
 
-    // Si se finalizo la actividad o se marco como backlog, actualizar la lista
-    if (result != null && result is Map && mounted) {
-      if (result['success'] == true || result['backlog'] == true) {
-        _onActividadFinalizada(result);
-      }
-      // Si hubo cambios de estado local (inicio/pausa/reanudación)
-      else if (result['changed'] == true) {
-        final String? action = result['action'] as String?;
-        await _recargarEstadosLocales();
-        
-        // Mostrar feedback visual según la acción
-        if (action != null) {
-          _mostrarFeedbackAccion(action);
+    // Siempre recargar datos al regresar del detalle
+    if (mounted) {
+      String? action;
+      if (result != null && result is Map) {
+        action = result['action'] as String?;
+        if (result['success'] == true || result['backlog'] == true) {
+          _loadPendingCount();
         }
       }
-    }
-  }
 
-  /// Maneja la finalizacion de una actividad
-  /// Remueve la actividad de la lista local y refresca en background
-  void _onActividadFinalizada(Map<dynamic, dynamic> result) {
-    final int? actividadId = result['actividadId'];
-    final int? idAsignacion = result['idAsignacion'];
-    final bool esSubTarea = result['esSubTarea'] ?? false;
+      await _recargarDatosDesdeBackend();
 
-    if (actividadId == null) return;
-
-    setState(() {
-      // Remover de la lista de pendientes
-      actividadesPendientes?.removeWhere((item) {
-        if (esSubTarea) {
-          // Para ST, comparar por idAsignacion
-          return item.idAsignacion == idAsignacion;
-        } else {
-          // Para TP, comparar por id del detalle
-          return item.actividad.id == actividadId;
-        }
-      });
-    });
-
-    // Actualizar contador de pendientes de sync
-    _loadPendingCount();
-
-    // Si no quedan actividades, volver a la pantalla de empleados
-    final totalActividades = actividadesPendientes?.length ?? 0;
-    if (totalActividades == 0) {
-      // Volver indicando que hubo cambios para que se recargue la lista de empleados
-      Navigator.pop(context, true);
+      if (action != null) {
+        _mostrarFeedbackAccion(action);
+      }
     }
   }
 
@@ -660,6 +628,104 @@ class _ActivitiesListPageState
     if (mounted) {
       setState(() {
         // Solo trigger rebuild con los datos actualizados
+      });
+    }
+  }
+
+  /// Recarga los datos desde el backend y actualiza la lista de actividades.
+  Future<void> _recargarDatosDesdeBackend() async {
+    if (!_isOnline) {
+      await _recargarEstadosLocales();
+      return;
+    }
+
+    try {
+      final authService = AuthService();
+      final freshData = await authService.refreshAllData();
+
+      if (freshData == null || freshData.isEmpty) {
+        await _recargarEstadosLocales();
+        return;
+      }
+
+      final empleadoId = widget.empleadoConActividades.empleado.id;
+      EmpleadoConActividades? empleadoActualizado;
+      for (var e in freshData) {
+        if (e.empleado.id == empleadoId) {
+          empleadoActualizado = e;
+          break;
+        }
+      }
+
+      if (empleadoActualizado == null) {
+        await _recargarEstadosLocales();
+        return;
+      }
+
+      if (empleadoActualizado.actividades.isEmpty) {
+        if (mounted) {
+          Navigator.pop(context, true);
+        }
+        return;
+      }
+
+      await _processActividadesFromList(empleadoActualizado.actividades);
+    } catch (e) {
+      await _recargarEstadosLocales();
+    }
+  }
+
+  /// Procesa una lista de actividades (igual que _processActividades pero recibe lista directa).
+  /// 
+  /// Usado por _recargarDatosDesdeBackend() para actualizar la lista después de un refresh.
+  Future<void> _processActividadesFromList(List<ActividadEmpleadoDto> actividades) async {
+    if (actividades.isEmpty) {
+      setState(() {
+        actividadesPendientes = [];
+      });
+      return;
+    }
+
+    // Obtener IDs de actividades pendientes de sync (ya finalizadas offline)
+    final pendingService = PendingSyncService();
+    final pendingActivityIds = await pendingService.getPendingActivityIds();
+    final pendingAsignacionIds = await pendingService.getPendingAsignacionIds();
+
+    // Servicio para cargar estados locales de tracking
+    final localStorageService = ActividadLocalStorageService();
+
+    // Convertir ActividadEmpleadoDto a ActividadConOt
+    List<ActividadConOt> todasActividades = [];
+    for (var actividadDto in actividades) {
+      if (actividadDto.detalle != null && actividadDto.ordentrabajo != null) {
+        todasActividades.add(
+          ActividadConOt(
+            actividad: actividadDto.detalle!,
+            ordentrabajo: actividadDto.ordentrabajo!,
+            actividadDto: actividadDto,
+          ),
+        );
+      }
+    }
+
+    // Filtrar actividades que ya fueron finalizadas y están en cola de sync
+    todasActividades = todasActividades.where((item) {
+      if (item.esSubTarea) {
+        return !pendingAsignacionIds.contains(item.idAsignacion);
+      } else {
+        return !pendingActivityIds.contains(item.actividad.id);
+      }
+    }).toList();
+
+    // Enriquecer con datos locales de SharedPreferences
+    await _enriquecerConDatosLocales(todasActividades, localStorageService);
+
+    // Ordenar todas las actividades
+    _ordenarActividades(todasActividades);
+
+    if (mounted) {
+      setState(() {
+        actividadesPendientes = todasActividades;
       });
     }
   }
