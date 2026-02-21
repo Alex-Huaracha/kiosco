@@ -2,15 +2,59 @@
 
 Documentación de endpoints para el sistema de registro de pausas con motivos para actividades de mantenimiento.
 
+> **BREAKING CHANGE v2:** El campo `cmotivo` (texto libre) fue reemplazado por `idmotivo` (ID del catálogo) + `cmotivoOtro` (texto libre, solo cuando `idmotivo = 8`). Ver [Guía de Migración para el Frontend](#guia-de-migracion-para-el-frontend).
+
 ---
 
-## 📋 Índice
+## Índice
 
-1. [Endpoint: Gestionar Pausa - Empleado Principal](#endpoint-1-gestionar-pausa---empleado-principal)
-2. [Endpoint: Gestionar Pausa - Empleado Asistente](#endpoint-2-gestionar-pausa---empleado-asistente)
-3. [Códigos de Respuesta HTTP](#códigos-de-respuesta-http)
-4. [Ejemplos de Errores](#ejemplos-de-errores)
-5. [Notas Importantes](#notas-importantes)
+1. [Endpoint: Catálogo de Motivos (NUEVO)](#endpoint-0-catalogo-de-motivos)
+2. [Endpoint: Gestionar Pausa - Empleado Principal](#endpoint-1-gestionar-pausa---empleado-principal)
+3. [Endpoint: Gestionar Pausa - Empleado Asistente](#endpoint-2-gestionar-pausa---empleado-asistente)
+4. [Endpoint: Gestionar Estado de Actividad (PAUSAR)](#endpoint-3-gestionar-estado-de-actividad-pausar)
+5. [Códigos de Respuesta HTTP](#codigos-de-respuesta-http)
+6. [Ejemplos de Errores](#ejemplos-de-errores)
+7. [Guía de Migración para el Frontend](#guia-de-migracion-para-el-frontend)
+8. [Notas Importantes](#notas-importantes)
+
+---
+
+## Endpoint 0: Catálogo de Motivos
+
+Retorna la lista de motivos de pausa activos. Llamar una vez al iniciar la app y cachear el resultado.
+
+### **URL**
+```
+GET /api/v1/catalogomotivopausas
+```
+
+### **Response (200 OK)**
+```json
+[
+  { "id": 1, "cnombre": "Servicios Higienicos",   "bactivo": true },
+  { "id": 2, "cnombre": "Re-asignacion de Tarea", "bactivo": true },
+  { "id": 3, "cnombre": "Falta de Repuesto",      "bactivo": true },
+  { "id": 4, "cnombre": "Falta de Herramienta",   "bactivo": true },
+  { "id": 5, "cnombre": "Alimentacion",            "bactivo": true },
+  { "id": 6, "cnombre": "Fin de Turno",            "bactivo": true },
+  { "id": 7, "cnombre": "Auxilio Mecanico",        "bactivo": true },
+  { "id": 8, "cnombre": "Otro",                    "bactivo": true }
+]
+```
+
+### **Campos del Response**
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `id` | Integer | ID del motivo (usar como `idmotivo` al registrar pausa) |
+| `cnombre` | String | Nombre visible para el usuario |
+| `bactivo` | Boolean | Solo se retornan los activos (`true`) |
+
+### **Comportamiento en el frontend**
+
+- Mostrar los motivos como una **lista desplegable** (dropdown / BottomSheet)
+- Si el usuario selecciona el motivo con `id = 8` ("Otro"), mostrar un **campo de texto adicional** para que el usuario describa el motivo
+- El campo "Otro" no tiene límite mínimo de caracteres pero sí máximo de 500
 
 ---
 
@@ -20,7 +64,7 @@ Gestiona pausas para actividades de empleados principales (`DetalleOrdentrabajo`
 
 ### **URL**
 ```
-POST /gestionarpausadetalleordentrabajo
+POST /api/v1/gestionarpausadetalleordentrabajo
 ```
 
 ### **Content-Type**
@@ -34,11 +78,21 @@ application/json
 
 Crea un registro de pausa cuando el empleado presiona el botón "PAUSAR".
 
-#### **Request Body**
+#### **Request Body — Motivo predefinido (id 1-7)**
 ```json
 {
   "iddetalleordentrabajo": "123",
-  "cmotivo": "Reunión de equipo",
+  "idmotivo": "3",
+  "dtiempoinicio": "2024-02-11 10:30:00.000"
+}
+```
+
+#### **Request Body — Motivo "Otro" (id 8)**
+```json
+{
+  "iddetalleordentrabajo": "123",
+  "idmotivo": "8",
+  "cmotivoOtro": "Fui a buscar el permiso del área de logística",
   "dtiempoinicio": "2024-02-11 10:30:00.000"
 }
 ```
@@ -48,15 +102,17 @@ Crea un registro de pausa cuando el empleado presiona el botón "PAUSAR".
 | Campo | Tipo | Requerido | Descripción |
 |-------|------|-----------|-------------|
 | `iddetalleordentrabajo` | String | ✅ Sí | ID de la actividad principal (numérico) |
-| `cmotivo` | String | ✅ Sí | Motivo de la pausa (máximo 500 caracteres) |
-| `dtiempoinicio` | String | ✅ Sí | Timestamp de inicio de pausa. Formato: `yyyy-MM-dd HH:mm:ss.SSS` |
+| `idmotivo` | String | ✅ Sí | ID del motivo del catálogo (1-8, numérico) |
+| `cmotivoOtro` | String | ⚠️ Solo si `idmotivo = 8` | Descripción libre del motivo. Máximo 500 caracteres. `null` o ausente para motivos 1-7 |
+| `dtiempoinicio` | String | ✅ Sí | Timestamp de inicio. Formato: `yyyy-MM-dd HH:mm:ss.SSS` |
 
 #### **Response (200 OK)**
 ```json
 {
   "id": 1,
   "iddetalleordentrabajo": 123,
-  "cmotivo": "Reunión de equipo",
+  "idmotivo": 3,
+  "cmotivoOtro": null,
   "dtiempoinicio": "2024-02-11T10:30:00.000+00:00",
   "dtiempofin": null,
   "nminutos": null,
@@ -68,9 +124,10 @@ Crea un registro de pausa cuando el empleado presiona el botón "PAUSAR".
 
 | Campo | Tipo | Descripción |
 |-------|------|-------------|
-| `id` | Integer | ID único de la pausa creada (guardar para reanudar) |
+| `id` | Integer | ID único de la pausa creada (**guardar para reanudar**) |
 | `iddetalleordentrabajo` | Integer | ID de la actividad |
-| `cmotivo` | String | Motivo de la pausa |
+| `idmotivo` | Integer | ID del motivo seleccionado |
+| `cmotivoOtro` | String | Descripción libre (solo si `idmotivo = 8`, de lo contrario `null`) |
 | `dtiempoinicio` | DateTime | Timestamp de inicio de pausa |
 | `dtiempofin` | DateTime | `null` cuando la pausa está activa |
 | `nminutos` | Integer | `null` cuando la pausa está activa |
@@ -80,7 +137,7 @@ Crea un registro de pausa cuando el empleado presiona el botón "PAUSAR".
 
 ### **Operación 2: Reanudar Pausa**
 
-Actualiza el registro de pausa cuando el empleado presiona el botón "REANUDAR".
+Actualiza el registro de pausa cuando el empleado presiona "REANUDAR". No cambia nada en el motivo.
 
 #### **Request Body**
 ```json
@@ -102,7 +159,8 @@ Actualiza el registro de pausa cuando el empleado presiona el botón "REANUDAR".
 {
   "id": 1,
   "iddetalleordentrabajo": 123,
-  "cmotivo": "Reunión de equipo",
+  "idmotivo": 3,
+  "cmotivoOtro": null,
   "dtiempoinicio": "2024-02-11T10:30:00.000+00:00",
   "dtiempofin": "2024-02-11T11:00:00.000+00:00",
   "nminutos": 30,
@@ -110,43 +168,36 @@ Actualiza el registro de pausa cuando el empleado presiona el botón "REANUDAR".
 }
 ```
 
-#### **Campos del Response**
-
-| Campo | Tipo | Descripción |
-|-------|------|-------------|
-| `id` | Integer | ID de la pausa |
-| `iddetalleordentrabajo` | Integer | ID de la actividad |
-| `cmotivo` | String | Motivo de la pausa |
-| `dtiempoinicio` | DateTime | Timestamp de inicio de pausa |
-| `dtiempofin` | DateTime | Timestamp de fin de pausa |
-| `nminutos` | Integer | **Duración en minutos (calculado automáticamente por backend)** |
-| `bactivo` | Boolean | Estado del registro |
-
 ---
 
 ## Endpoint 2: Gestionar Pausa - Empleado Asistente
 
-Gestiona pausas para empleados asistentes (`DetalleAsignacion`).
+Gestiona pausas para empleados asistentes (`DetalleAsignacion`). Misma lógica que el Endpoint 1.
 
 ### **URL**
 ```
-POST /gestionarpausadetalleasignacion
-```
-
-### **Content-Type**
-```
-application/json
+POST /api/v1/gestionarpausadetalleasignacion
 ```
 
 ---
 
 ### **Operación 1: Registrar Pausa Nueva**
 
-#### **Request Body**
+#### **Request Body — Motivo predefinido (id 1-7)**
 ```json
 {
   "iddetalleasignacion": "456",
-  "cmotivo": "Almuerzo",
+  "idmotivo": "5",
+  "dtiempoinicio": "2024-02-11 12:00:00.000"
+}
+```
+
+#### **Request Body — Motivo "Otro" (id 8)**
+```json
+{
+  "iddetalleasignacion": "456",
+  "idmotivo": "8",
+  "cmotivoOtro": "Coordinación con el proveedor externo",
   "dtiempoinicio": "2024-02-11 12:00:00.000"
 }
 ```
@@ -156,15 +207,17 @@ application/json
 | Campo | Tipo | Requerido | Descripción |
 |-------|------|-----------|-------------|
 | `iddetalleasignacion` | String | ✅ Sí | ID de la asignación (empleado asistente, numérico) |
-| `cmotivo` | String | ✅ Sí | Motivo de la pausa (máximo 500 caracteres) |
-| `dtiempoinicio` | String | ✅ Sí | Timestamp de inicio de pausa. Formato: `yyyy-MM-dd HH:mm:ss.SSS` |
+| `idmotivo` | String | ✅ Sí | ID del motivo del catálogo (1-8, numérico) |
+| `cmotivoOtro` | String | ⚠️ Solo si `idmotivo = 8` | Descripción libre. Máximo 500 caracteres |
+| `dtiempoinicio` | String | ✅ Sí | Timestamp de inicio. Formato: `yyyy-MM-dd HH:mm:ss.SSS` |
 
 #### **Response (200 OK)**
 ```json
 {
   "id": 2,
   "iddetalleasignacion": 456,
-  "cmotivo": "Almuerzo",
+  "idmotivo": 5,
+  "cmotivoOtro": null,
   "dtiempoinicio": "2024-02-11T12:00:00.000+00:00",
   "dtiempofin": null,
   "nminutos": null,
@@ -184,19 +237,13 @@ application/json
 }
 ```
 
-#### **Campos del Request**
-
-| Campo | Tipo | Requerido | Descripción |
-|-------|------|-----------|-------------|
-| `id` | String | ✅ Sí | ID de la pausa a reanudar |
-| `dtiempofin` | String | ✅ Sí | Timestamp de fin de pausa. Formato: `yyyy-MM-dd HH:mm:ss.SSS` |
-
 #### **Response (200 OK)**
 ```json
 {
   "id": 2,
   "iddetalleasignacion": 456,
-  "cmotivo": "Almuerzo",
+  "idmotivo": 5,
+  "cmotivoOtro": null,
   "dtiempoinicio": "2024-02-11T12:00:00.000+00:00",
   "dtiempofin": "2024-02-11T13:30:00.000+00:00",
   "nminutos": 90,
@@ -206,15 +253,42 @@ application/json
 
 ---
 
-## Códigos de Respuesta HTTP
+## Endpoint 3: Gestionar Estado de Actividad (PAUSAR)
 
-### ✅ **Respuestas Exitosas**
+El endpoint `/api/v1/gestionarestadoactividad` con acción `PAUSAR` también cambió. Ver documentación de ese endpoint para el detalle completo. El cambio relevante:
+
+### **Antes (campo eliminado)**
+```json
+{
+  "iddetalleordentrabajo": "123",
+  "accion": "PAUSAR",
+  "timestamp": "2024-02-11 10:30:00.000",
+  "cmotivo": "Descanso"
+}
+```
+
+### **Ahora**
+```json
+{
+  "iddetalleordentrabajo": "123",
+  "accion": "PAUSAR",
+  "timestamp": "2024-02-11 10:30:00.000",
+  "idmotivo": "1",
+  "cmotivoOtro": null
+}
+```
+
+---
+
+## Codigos de Respuesta HTTP
+
+### Respuestas Exitosas
 
 | Código | Descripción |
 |--------|-------------|
 | `200 OK` | Operación exitosa (pausa registrada o reanudada) |
 
-### ❌ **Respuestas de Error**
+### Respuestas de Error
 
 | Código | Descripción |
 |--------|-------------|
@@ -226,16 +300,58 @@ application/json
 
 ## Ejemplos de Errores
 
-### **Error: ID inválido (no numérico)**
+### **Error: idmotivo faltante**
 
 **Request:**
 ```json
 {
-  "iddetalleordentrabajo": "abc",
-  "cmotivo": "Reunión",
+  "iddetalleordentrabajo": "123",
   "dtiempoinicio": "2024-02-11 10:30:00.000"
 }
 ```
+**Response (400 BAD_REQUEST):**
+```
+idmotivo es requerido
+```
+
+---
+
+### **Error: idmotivo no numérico**
+
+**Request:**
+```json
+{
+  "iddetalleordentrabajo": "123",
+  "idmotivo": "abc",
+  "dtiempoinicio": "2024-02-11 10:30:00.000"
+}
+```
+**Response (400 BAD_REQUEST):**
+```
+idmotivo inválido. Solo se permiten números.
+```
+
+---
+
+### **Error: cmotivoOtro vacío cuando idmotivo = 8**
+
+**Request:**
+```json
+{
+  "iddetalleordentrabajo": "123",
+  "idmotivo": "8",
+  "cmotivoOtro": "",
+  "dtiempoinicio": "2024-02-11 10:30:00.000"
+}
+```
+**Response (400 BAD_REQUEST):**
+```
+cmotivoOtro es requerido cuando idmotivo es 8 (Otro)
+```
+
+---
+
+### **Error: ID de actividad inválido**
 
 **Response (400 BAD_REQUEST):**
 ```
@@ -244,34 +360,7 @@ iddetalleordentrabajo inválido. Solo se permiten números.
 
 ---
 
-### **Error: Motivo vacío**
-
-**Request:**
-```json
-{
-  "iddetalleordentrabajo": "123",
-  "cmotivo": "",
-  "dtiempoinicio": "2024-02-11 10:30:00.000"
-}
-```
-
-**Response (400 BAD_REQUEST):**
-```
-cmotivo es requerido y no puede estar vacío
-```
-
----
-
 ### **Error: Formato de fecha incorrecto**
-
-**Request:**
-```json
-{
-  "iddetalleordentrabajo": "123",
-  "cmotivo": "Reunión",
-  "dtiempoinicio": "11/02/2024 10:30"
-}
-```
 
 **Response (400 BAD_REQUEST):**
 ```
@@ -282,14 +371,6 @@ dtiempoinicio inválido. Formato debe ser: yyyy-MM-dd HH:mm:ss.SSS
 
 ### **Error: Pausa no existe**
 
-**Request:**
-```json
-{
-  "id": "999",
-  "dtiempofin": "2024-02-11 11:00:00.000"
-}
-```
-
 **Response (404 NOT_FOUND):**
 ```
 No se encontró pausa con id: 999
@@ -299,14 +380,6 @@ No se encontró pausa con id: 999
 
 ### **Error: Fecha fin anterior a fecha inicio**
 
-**Request:**
-```json
-{
-  "id": "1",
-  "dtiempofin": "2024-02-11 09:00:00.000"
-}
-```
-
 **Response (400 BAD_REQUEST):**
 ```
 dtiempofin debe ser posterior a dtiempoinicio
@@ -314,54 +387,108 @@ dtiempofin debe ser posterior a dtiempoinicio
 
 ---
 
+## Guia de Migracion para el Frontend
+
+### Cambios requeridos
+
+#### 1. Cargar el catálogo al iniciar
+
+Agregar una llamada al iniciar la app (o al abrir la pantalla de pausa):
+
+```
+GET /api/v1/catalogomotivopausas
+```
+
+Cachear la lista en memoria o en estado local. No es necesario llamarlo en cada pausa.
+
+#### 2. Reemplazar el campo de texto por un selector
+
+La pantalla de "registrar pausa" debe cambiar de:
+- `TextField` para `cmotivo` (texto libre)
+
+a:
+- `DropdownButton` / `BottomSheet` con los 8 motivos del catálogo
+- Un `TextField` adicional para `cmotivoOtro`, que aparece **solo cuando el usuario selecciona "Otro" (id=8)**
+
+#### 3. Actualizar los requests de pausa
+
+| Antes | Ahora |
+|-------|-------|
+| `"cmotivo": "texto libre"` | `"idmotivo": "3"` |
+| — | `"cmotivoOtro": null` (o texto si id=8) |
+
+**Lógica recomendada en el cliente:**
+```
+si motivoSeleccionado.id == 8:
+    enviar idmotivo: "8", cmotivoOtro: campoTexto.value
+sino:
+    enviar idmotivo: motivoSeleccionado.id.toString(), cmotivoOtro: null
+```
+
+#### 4. Actualizar las vistas que muestran pausas
+
+En las pantallas del supervisor y del empleado, donde antes se mostraba `pausa.cmotivo` como texto, ahora deben:
+
+```
+si pausa.idmotivo == 8:
+    mostrar pausa.cmotivoOtro   // texto libre del usuario
+sino:
+    mostrar nombre del motivo   // buscar en catálogo: catalogoMotivos[pausa.idmotivo].cnombre
+```
+
+**Recomendación:** mantener el catálogo cacheado para hacer este lookup sin llamadas adicionales.
+
+---
+
 ## Notas Importantes
 
-### 📅 **Formato de Fechas**
+### Formato de Fechas
 
-**CRÍTICO:** Las fechas deben enviarse en el formato exacto:
-
+**CRITICO:** Las fechas deben enviarse en el formato exacto:
 ```
 yyyy-MM-dd HH:mm:ss.SSS
 ```
-
 **Ejemplos válidos:**
 - `2024-02-11 10:30:00.000`
 - `2024-12-25 14:45:30.123`
 
 **Ejemplos inválidos:**
-- ❌ `11/02/2024 10:30`
-- ❌ `2024-02-11 10:30`
-- ❌ `2024-02-11T10:30:00`
+- `11/02/2024 10:30`
+- `2024-02-11 10:30`
+- `2024-02-11T10:30:00`
 
 ---
 
-### 🔢 **Cálculo de Minutos**
+### Calculo de Minutos
 
 El campo `nminutos` es **calculado automáticamente por el backend** al reanudar:
-
 ```
 nminutos = (dtiempofin - dtiempoinicio) / 60000 milisegundos
 ```
-
-**No es necesario enviar este valor desde el cliente.**
+No es necesario enviar este valor desde el cliente.
 
 ---
 
-### 🔑 **Flujo de Uso**
+### Flujo de Uso
 
-1. **Al pausar:**
+1. **Al abrir pantalla de pausa:**
+   - Cargar motivos de `GET /api/v1/catalogomotivopausas` (si no están cacheados)
+
+2. **Al pausar:**
+   - Usuario selecciona motivo del dropdown
+   - Si selecciona "Otro" (id=8), usuario escribe descripción
    - Cliente envía request **SIN campo `id`**
    - Backend crea nuevo registro y retorna `id` generado
-   - **Cliente debe guardar este `id` localmente**
+   - **Cliente guarda este `id` localmente**
 
-2. **Al reanudar:**
-   - Cliente envía request **CON el `id` guardado**
+3. **Al reanudar:**
+   - Cliente envía request **CON el `id` guardado** + `dtiempofin`
    - Backend actualiza el registro y calcula `nminutos`
-   - Cliente puede usar `nminutos` para actualizar tiempo efectivo
+   - No es necesario reenviar el motivo
 
 ---
 
-### 🎯 **Detección Automática de Operación**
+### Deteccion Automatica de Operacion
 
 El backend detecta automáticamente la operación:
 
@@ -370,9 +497,9 @@ El backend detecta automáticamente la operación:
 
 ---
 
-### 🔒 **Campos de Auditoría**
+### Campos de Auditoria
 
-Los siguientes campos se gestionan automáticamente:
+Los siguientes campos se gestionan automáticamente por el backend:
 
 - `dfecreg`: Fecha de creación del registro
 - `dfecmod`: Fecha de última modificación
@@ -384,35 +511,36 @@ Los siguientes campos se gestionan automáticamente:
 
 ---
 
-### ⚠️ **Validaciones del Backend**
+### Validaciones del Backend
 
 El backend valida:
 
-- ✅ IDs son numéricos
-- ✅ Motivo no está vacío
-- ✅ Formato de fechas correcto
-- ✅ Fecha fin > fecha inicio
-- ✅ Pausa existe al intentar reanudar
+- IDs son numéricos
+- `idmotivo` está presente y es numérico
+- `cmotivoOtro` no está vacío cuando `idmotivo = 8`
+- Formato de fechas correcto
+- Fecha fin > fecha inicio
+- Pausa existe al intentar reanudar
 
 ---
 
-## 📊 Ejemplos de Casos de Uso
+## Ejemplos de Casos de Uso
 
-### **Caso 1: Pausa de 30 minutos**
+### **Caso 1: Pausa por falta de repuesto (motivo predefinido)**
 
 ```json
 // 1. Registrar pausa
-POST /gestionarpausadetalleordentrabajo
+POST /api/v1/gestionarpausadetalleordentrabajo
 {
   "iddetalleordentrabajo": "100",
-  "cmotivo": "Descanso",
+  "idmotivo": "3",
   "dtiempoinicio": "2024-02-11 10:00:00.000"
 }
 
-// Response: { "id": 5, ... }
+// Response: { "id": 5, "idmotivo": 3, "cmotivoOtro": null, ... }
 
 // 2. Reanudar después de 30 minutos
-POST /gestionarpausadetalleordentrabajo
+POST /api/v1/gestionarpausadetalleordentrabajo
 {
   "id": "5",
   "dtiempofin": "2024-02-11 10:30:00.000"
@@ -423,21 +551,22 @@ POST /gestionarpausadetalleordentrabajo
 
 ---
 
-### **Caso 2: Pausa de 2 horas y 15 minutos**
+### **Caso 2: Pausa con motivo "Otro"**
 
 ```json
 // 1. Registrar pausa
-POST /gestionarpausadetalleasignacion
+POST /api/v1/gestionarpausadetalleasignacion
 {
   "iddetalleasignacion": "200",
-  "cmotivo": "Almuerzo extendido",
+  "idmotivo": "8",
+  "cmotivoOtro": "Coordinación urgente con el área de compras",
   "dtiempoinicio": "2024-02-11 12:00:00.000"
 }
 
-// Response: { "id": 6, ... }
+// Response: { "id": 6, "idmotivo": 8, "cmotivoOtro": "Coordinación urgente con el área de compras", ... }
 
 // 2. Reanudar después de 2h 15min
-POST /gestionarpausadetalleasignacion
+POST /api/v1/gestionarpausadetalleasignacion
 {
   "id": "6",
   "dtiempofin": "2024-02-11 14:15:00.000"
@@ -448,25 +577,26 @@ POST /gestionarpausadetalleasignacion
 
 ---
 
-## 🔗 Base URL
+## Base URL
 
 ```
 http://localhost:8080
 ```
 
-**En producción, reemplazar con la URL del servidor.**
+En producción, reemplazar con la URL del servidor.
 
 ---
 
-## 📝 Versión
+## Version
 
-- **Versión API:** 1.0
-- **Fecha:** 2024-02-11
+- **Version API:** 2.0
+- **Fecha:** 2026-02-18
 - **Backend:** Spring Boot 2.2.2
 - **Base de datos:** SQL Server
+- **Cambio principal:** `cmotivo` reemplazado por `idmotivo` + `cmotivoOtro` con catálogo `catalogo_motivo_pausa`
 
 ---
 
-## 🆘 Soporte
+## Soporte
 
 Para reportar errores o solicitar cambios, contactar al equipo de desarrollo.
