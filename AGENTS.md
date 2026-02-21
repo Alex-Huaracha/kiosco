@@ -536,16 +536,12 @@ flutter run --profile
 
 ## 🚧 Known TODOs & Pending Work
 
-### ✅ Backend Integration - Endpoint Unificado (COMPLETED)
+### ✅ Backend Integration - Endpoints Unificados (COMPLETED)
+
+**Status:** ✅ Fully migrated to unified RESTful endpoints (Feb 2026)
+
+#### Tareas Principales (TP) - DetalleOrdenTrabajo
 **Endpoint:** `POST /api/v1/gestionarestadoactividad`
-
-**Status:** ✅ Fully migrated to unified RESTful endpoint (Feb 2026)
-
-**Architecture:**
-- **Unified State Machine:** Single endpoint handles INICIAR, PAUSAR, REANUDAR, FINALIZAR
-- **TP Support:** All Tareas Principales (DetalleOrdenTrabajo) use new endpoint
-- **ST Support:** Sub-Tareas (DetalleAsignacion) maintain existing endpoints
-- **Offline Sync:** PendingSyncService migrated to new request format
 
 **Implementation:**
 - `TrackingApi.gestionarEstadoActividadTP()` - Unified HTTP client for all actions
@@ -553,7 +549,28 @@ flutter run --profile
 - `ActivityService.pausarActividadTP()` - PAUSAR wrapper (returns idpausa)
 - `ActivityService.reanudarActividadTP()` - REANUDAR wrapper (idpausa is optional)
 - `ActivityService.finalizarActividadTPNuevo()` - FINALIZAR wrapper
-- UI integration in `activity_detail_page.dart` with real-time sync
+
+#### Sub-Tareas (ST) - DetalleAsignacion
+**Endpoint:** `POST /api/v1/gestionarestadosubtarea`
+
+**Implementation:**
+- `TrackingApi.gestionarEstadoActividadST()` - Unified HTTP client for all actions
+- `ActivityService.iniciarActividadST()` - INICIAR wrapper (NEW - supervisors can see when assistant starts)
+- `ActivityService.pausarActividadST()` - PAUSAR wrapper (returns idpausa)
+- `ActivityService.reanudarActividadST()` - REANUDAR wrapper (idpausa is optional, backend finds active pause)
+- `ActivityService.finalizarActividadSTNuevo()` - FINALIZAR wrapper
+
+#### Arquitectura Común
+
+**Acciones soportadas:** INICIAR, PAUSAR, REANUDAR, FINALIZAR
+
+**Máquina de Estados:**
+```
+NO_INICIADA ──INICIAR──> EN_PROCESO
+EN_PROCESO  ──PAUSAR───> PAUSADA
+PAUSADA     ──REANUDAR─> EN_PROCESO
+EN_PROCESO  ──FINALIZAR> TERMINADA
+```
 
 **Date Format:** `yyyy-MM-dd HH:mm:ss.SSS` (custom format, not ISO8601)
 
@@ -561,23 +578,33 @@ flutter run --profile
 - ✅ INICIAR sends timestamp to backend immediately (real-time sync for supervisors)
 - ✅ PAUSAR creates pause record and returns idpausa (stored locally for debugging)
 - ✅ REANUDAR automatically finds active pause (no idpausa needed in 99% of cases)
-- ✅ FINALIZAR sends total worked minutes (calculated in frontend)
+- ✅ FINALIZAR - backend calculates worked minutes automatically
 - ✅ Offline support with automatic queue retry using new format
+- ✅ GestionEstadoResponse supports both TP (iddetalleordentrabajo) and ST (iddetalleasignacion)
 
-**Request Example:**
+**Request Example (TP):**
 ```json
 {
   "iddetalleordentrabajo": "354827",
-  "idempleadoext": "2537",
-  "ccargoemp": "TECNICO ELECTRICISTA M1",
-  "cnombreemp": "ALCCA QUISPE, EFRAIN",
-  "dtiempoinicio": "2025-01-30 14:30:00.000",
-  "dtiempofin": "2025-01-30 16:45:00.000",
-  "nminutosemp": "135",
-  "cobservaciones": "Actividad completada",
-  "bcerrada": "1"
+  "accion": "INICIAR",
+  "timestamp": "2026-02-21 10:30:00.000"
 }
 ```
+
+**Request Example (ST):**
+```json
+{
+  "iddetalleasignacion": "14",
+  "accion": "PAUSAR",
+  "timestamp": "2026-02-21 11:00:00.000",
+  "idmotivo": "1"
+}
+```
+
+**Deprecated Endpoints (DO NOT USE):**
+- `finalizarAsignacion()` → Use `gestionarEstadoActividadST(accion: "FINALIZAR")`
+- `registrarPausaST()` → Use `gestionarEstadoActividadST(accion: "PAUSAR")`
+- `reanudarPausaST()` → Use `gestionarEstadoActividadST(accion: "REANUDAR")`
 
 **Features:**
 - Automatic retry on network errors (local state preserved)

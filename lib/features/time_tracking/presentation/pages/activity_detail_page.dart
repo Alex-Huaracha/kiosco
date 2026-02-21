@@ -8,6 +8,7 @@ import 'package:hgtrack/core/theme/app_colors.dart';
 import 'package:hgtrack/features/authentication/data/models/empleado.dart';
 import 'package:hgtrack/features/time_tracking/data/models/actividad.dart';
 import 'package:hgtrack/features/time_tracking/data/models/detalle_orden_trabajo.dart';
+import 'package:hgtrack/features/time_tracking/data/models/gestion_estado_response.dart';
 import 'package:hgtrack/features/time_tracking/data/models/motivo_pausa.dart';
 import 'package:hgtrack/features/time_tracking/data/models/orden_trabajo.dart';
 import 'package:hgtrack/features/time_tracking/data/models/pending_sync_activity.dart';
@@ -298,28 +299,43 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
       await _saveState();
       _startTimerIfNeeded();
 
-      // 2. Enviar al backend si está online Y es TP
+      // 2. Enviar al backend si está online (tanto TP como ST)
       final esSubTarea = widget.actividadConOt?.esSubTarea ?? false;
 
-      if (_isOnline && !esSubTarea) {
-        // Solo enviar INICIAR para Tareas Principales (TP)
+      if (_isOnline) {
         final service = ActivityService();
-        final response = await service.iniciarActividadTP(
-          idDetalleOrdenTrabajo: widget.actividad.id!,
-          timestamp: ahora,
-        );
+        GestionEstadoResponse? response;
 
+        if (esSubTarea) {
+          // Sub-Tarea (ST) - usar NUEVO endpoint unificado
+          final idAsignacion = widget.actividadConOt?.idAsignacion;
+          if (idAsignacion != null) {
+            response = await service.iniciarActividadST(
+              idDetalleAsignacion: idAsignacion,
+              timestamp: ahora,
+            );
+          } else {
+            print("⚠️ Advertencia: idAsignacion es null para Sub-Tarea");
+          }
+        } else {
+          // Tarea Principal (TP)
+          response = await service.iniciarActividadTP(
+            idDetalleOrdenTrabajo: widget.actividad.id!,
+            timestamp: ahora,
+          );
+        }
+
+        final tipoLabel = esSubTarea ? 'ST' : 'TP';
         if (response == null || !response.exito) {
           // Advertencia en consola, pero NO bloquear operación
           print(
-              "⚠️ Advertencia: No se pudo registrar inicio en backend, continuando localmente");
+              "⚠️ Advertencia: No se pudo registrar inicio $tipoLabel en backend, continuando localmente");
           print("   Motivo: ${response?.mensaje ?? 'Error de conexión'}");
           // El estado local ya está guardado - el técnico puede continuar trabajando
         } else {
-          print("✅ Actividad iniciada correctamente en backend");
+          print("✅ Actividad $tipoLabel iniciada correctamente en backend");
         }
       }
-      // Para ST, solo guardar local (como antes)
 
       if (mounted) {
         Navigator.pop(context, {
@@ -374,35 +390,38 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
 
       int? idPausaBackend;
 
+      final service = ActivityService();
+      GestionEstadoResponse? response;
+
       if (esSubTarea) {
-        // Sub-Tarea (ST) - usar endpoint específico con nuevo contrato
+        // Sub-Tarea (ST) - usar NUEVO endpoint unificado
         final idAsignacion = widget.actividadConOt?.idAsignacion;
         if (idAsignacion == null) {
           throw Exception('ID de asignación no disponible para Sub-Tarea');
         }
 
-        idPausaBackend = await TrackingApi().registrarPausaST(
+        response = await service.pausarActividadST(
           idDetalleAsignacion: idAsignacion,
           idmotivo: resultado.idmotivo,
           cmotivoOtro: resultado.cmotivoOtro,
-          tiempoInicio: ahora,
+          timestamp: ahora,
         );
       } else {
-        // Tarea Principal (TP) - usar endpoint unificado con nuevo contrato
-        final service = ActivityService();
-        final response = await service.pausarActividadTP(
+        // Tarea Principal (TP) - usar endpoint unificado
+        response = await service.pausarActividadTP(
           idDetalleOrdenTrabajo: widget.actividad.id!,
           idmotivo: resultado.idmotivo,
           cmotivoOtro: resultado.cmotivoOtro,
           timestamp: ahora,
         );
-
-        if (response == null || !response.exito) {
-          throw Exception(response?.mensaje ?? 'No se pudo pausar la actividad');
-        }
-
-        idPausaBackend = response.idpausa;
       }
+
+      final tipoLabel = esSubTarea ? 'ST' : 'TP';
+      if (response == null || !response.exito) {
+        throw Exception(response?.mensaje ?? 'No se pudo pausar la actividad $tipoLabel');
+      }
+
+      idPausaBackend = response.idpausa;
 
       if (idPausaBackend == null) {
         throw Exception('No se recibió ID de pausa del servidor');
@@ -466,38 +485,34 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
       final ahora = DateTime.now();
       final esSubTarea = widget.actividadConOt?.esSubTarea ?? false;
 
-      bool exitoso = false;
+      final service = ActivityService();
+      GestionEstadoResponse? response;
 
       if (esSubTarea) {
-        // Sub-Tarea (ST) - usar endpoint específico (requiere idPausa)
-        final idPausaBackend = _trackingState!.idPausaBackend;
-        if (idPausaBackend == null) {
-          throw Exception('No se encontró el ID de pausa para Sub-Tarea');
+        // Sub-Tarea (ST) - usar NUEVO endpoint unificado
+        // Ya NO requiere idpausa - el backend busca automáticamente la pausa activa
+        final idAsignacion = widget.actividadConOt?.idAsignacion;
+        if (idAsignacion == null) {
+          throw Exception('ID de asignación no disponible para Sub-Tarea');
         }
 
-        exitoso = await TrackingApi().reanudarPausaST(
-          idPausa: idPausaBackend,
-          tiempoFin: ahora,
+        response = await service.reanudarActividadST(
+          idDetalleAsignacion: idAsignacion,
+          timestamp: ahora,
         );
       } else {
-        // Tarea Principal (TP) - usar NUEVO endpoint unificado
+        // Tarea Principal (TP) - usar endpoint unificado
         // NO enviamos idpausa - el backend busca automáticamente la pausa activa
-        final service = ActivityService();
-        final response = await service.reanudarActividadTP(
+        response = await service.reanudarActividadTP(
           idDetalleOrdenTrabajo: widget.actividad.id!,
           timestamp: ahora,
         );
-
-        exitoso = response != null && response.exito;
-
-        if (!exitoso) {
-          throw Exception(
-              response?.mensaje ?? 'No se pudo reanudar la actividad');
-        }
       }
 
-      if (!exitoso) {
-        throw Exception('No se pudo reanudar la pausa en el servidor');
+      final tipoLabel = esSubTarea ? 'ST' : 'TP';
+      if (response == null || !response.exito) {
+        throw Exception(
+            response?.mensaje ?? 'No se pudo reanudar la actividad $tipoLabel');
       }
 
       // Actualizar estado local (limpia idPausaBackend automáticamente)
@@ -625,20 +640,27 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
       print('  - Minutos: $minutosTotal');
 
       bool exito = false;
+      GestionEstadoResponse? response;
 
-      if (esSubTarea && widget.actividadConOt?.actividadDto != null) {
-        // Sub-Tarea (ST) - usar método existente (sin cambios)
-        exito = await service.finalizarSubTarea(
-          actividadDto: widget.actividadConOt!.actividadDto!,
-          tiempoInicio: fechaInicio,
-          tiempoFin: fechaFin,
-          minutosEmpleado: minutosTotal,
+      if (esSubTarea) {
+        // Sub-Tarea (ST) - usar NUEVO endpoint unificado
+        final idAsignacion = widget.actividadConOt?.idAsignacion;
+        if (idAsignacion == null) {
+          throw Exception('ID de asignación no disponible para Sub-Tarea');
+        }
+
+        // NOTA: No enviamos minutosEmpleado, el backend lo calcula automáticamente
+        response = await service.finalizarActividadSTNuevo(
+          idDetalleAsignacion: idAsignacion,
+          timestamp: fechaFin,
           observaciones: _observacionesController.text.trim(),
         );
+
+        exito = response != null && response.exito;
       } else {
-        // Tarea Principal (TP) - usar NUEVO endpoint unificado
+        // Tarea Principal (TP) - usar endpoint unificado
         // NOTA: No enviamos minutosEmpleado, el backend lo calcula automáticamente
-        final response = await service.finalizarActividadTPNuevo(
+        response = await service.finalizarActividadTPNuevo(
           idDetalleOrdenTrabajo: widget.actividad.id!,
           timestamp: fechaFin,
           observaciones: _observacionesController.text.trim(),

@@ -1,7 +1,9 @@
-/// Response del endpoint unificado /gestionarestadoactividad
+/// Response del endpoint unificado de gestión de estado.
 ///
 /// Este modelo representa la respuesta del backend cuando se gestiona
-/// el estado de una Tarea Principal (TP - DetalleOrdenTrabajo).
+/// el estado de una actividad, ya sea:
+/// - Tarea Principal (TP): /gestionarestadoactividad
+/// - Sub-Tarea (ST): /gestionarestadosubtarea
 ///
 /// Acciones soportadas: INICIAR, PAUSAR, REANUDAR, FINALIZAR
 class GestionEstadoResponse {
@@ -11,8 +13,11 @@ class GestionEstadoResponse {
   /// Mensaje descriptivo del resultado de la operación
   final String mensaje;
 
-  /// ID del detalle de orden de trabajo afectado
-  final int iddetalleordentrabajo;
+  /// ID del detalle de orden de trabajo afectado (solo para TP)
+  final int? iddetalleordentrabajo;
+
+  /// ID del detalle de asignación afectado (solo para ST)
+  final int? iddetalleasignacion;
 
   /// Acción ejecutada (INICIAR, PAUSAR, REANUDAR, FINALIZAR)
   final String accion;
@@ -34,19 +39,28 @@ class GestionEstadoResponse {
   GestionEstadoResponse({
     required this.exito,
     required this.mensaje,
-    required this.iddetalleordentrabajo,
+    this.iddetalleordentrabajo,
+    this.iddetalleasignacion,
     required this.accion,
     required this.estadoActual,
     this.idpausa,
     required this.timestampAccion,
   });
 
+  /// Retorna el ID afectado (TP o ST según corresponda)
+  int get idAfectado => iddetalleasignacion ?? iddetalleordentrabajo!;
+
+  /// Indica si es respuesta de una Sub-Tarea
+  bool get esSubTarea => iddetalleasignacion != null;
+
   /// Crea una instancia desde JSON (response del backend)
+  /// Soporta tanto TP (iddetalleordentrabajo) como ST (iddetalleasignacion)
   factory GestionEstadoResponse.fromJson(Map<String, dynamic> json) {
     return GestionEstadoResponse(
       exito: json['exito'] as bool,
       mensaje: json['mensaje'] as String,
-      iddetalleordentrabajo: json['iddetalleordentrabajo'] as int,
+      iddetalleordentrabajo: json['iddetalleordentrabajo'] as int?,
+      iddetalleasignacion: json['iddetalleasignacion'] as int?,
       accion: json['accion'] as String,
       estadoActual: json['estadoActual'] as String,
       idpausa: json['idpausa'] as int?,
@@ -83,19 +97,31 @@ class GestionEstadoResponse {
 
   /// Convierte la instancia a JSON
   Map<String, dynamic> toJson() {
-    return {
+    final Map<String, dynamic> data = {
       'exito': exito,
       'mensaje': mensaje,
-      'iddetalleordentrabajo': iddetalleordentrabajo,
       'accion': accion,
       'estadoActual': estadoActual,
       'idpausa': idpausa,
       'timestampAccion': timestampAccion.toIso8601String(),
     };
+    
+    // Agregar el ID correspondiente según el tipo
+    if (iddetalleordentrabajo != null) {
+      data['iddetalleordentrabajo'] = iddetalleordentrabajo;
+    }
+    if (iddetalleasignacion != null) {
+      data['iddetalleasignacion'] = iddetalleasignacion;
+    }
+    
+    return data;
   }
 
   @override
   String toString() {
-    return 'GestionEstadoResponse{exito: $exito, mensaje: $mensaje, accion: $accion, estadoActual: $estadoActual, idpausa: $idpausa}';
+    final idLabel = esSubTarea 
+        ? 'iddetalleasignacion: $iddetalleasignacion'
+        : 'iddetalleordentrabajo: $iddetalleordentrabajo';
+    return 'GestionEstadoResponse{exito: $exito, mensaje: $mensaje, $idLabel, accion: $accion, estadoActual: $estadoActual, idpausa: $idpausa}';
   }
 }

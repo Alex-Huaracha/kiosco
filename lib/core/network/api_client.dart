@@ -166,6 +166,9 @@ class TrackingApi {
     }
   }
 
+  /// OBSOLETO: Reemplazado por gestionarEstadoActividadST() con acción FINALIZAR.
+  /// Mantenido temporalmente para compatibilidad, pero NO debe usarse en código nuevo.
+  @Deprecated('Usar gestionarEstadoActividadST() con accion FINALIZAR')
   /// Finaliza una Sub-Tarea (ST) enviando tiempos al backend.
   /// Usa el endpoint /adddetalleasignacion con el idAsignacion.
   /// 
@@ -462,6 +465,90 @@ class TrackingApi {
     }
   }
 
+  /// Gestiona el estado de una Sub-Tarea (ST) usando endpoint unificado.
+  ///
+  /// Endpoint: POST /api/v1/gestionarestadosubtarea
+  ///
+  /// Este método reemplaza los endpoints fragmentados anteriores:
+  /// - INICIAR: Registra timestamp de inicio (NUEVO - antes no existía)
+  /// - PAUSAR: Crea nueva pausa (requiere idmotivo + cmotivoOtro si id=8)
+  /// - REANUDAR: Cierra pausa activa (idpausa es opcional - backend busca automáticamente)
+  /// - FINALIZAR: Registra timestamp de fin (backend calcula tiempo automáticamente)
+  ///
+  /// [idDetalleAsignacion] - ID del detalle de asignación (sub-tarea)
+  /// [accion] - Acción a ejecutar: "INICIAR", "PAUSAR", "REANUDAR", "FINALIZAR"
+  /// [timestamp] - Fecha/hora de la acción (formato: yyyy-MM-dd HH:mm:ss.SSS)
+  /// [idmotivo] - ID del motivo del catálogo (REQUERIDO para PAUSAR)
+  /// [cmotivoOtro] - Descripción libre (solo cuando idmotivo=8, null en otro caso)
+  /// [cobservaciones] - Observaciones opcionales (para FINALIZAR)
+  /// [nminutosemp] - OPCIONAL: Minutos empleados. Si se omite, el backend calcula automáticamente
+  /// [idpausa] - ID de pausa específica (OPCIONAL para REANUDAR)
+  ///
+  /// IMPORTANTE sobre idpausa:
+  /// En el 99% de casos NO es necesario enviar idpausa en REANUDAR.
+  /// El backend busca automáticamente la pausa activa más reciente.
+  /// Solo usar idpausa para casos especiales de corrección manual.
+  ///
+  /// Retorna [GestionEstadoResponse] en caso de éxito, null en caso de error.
+  Future<GestionEstadoResponse?> gestionarEstadoActividadST({
+    required int idDetalleAsignacion,
+    required String accion,
+    required DateTime timestamp,
+    int? idmotivo,
+    String? cmotivoOtro,
+    String? cobservaciones,
+    String? nminutosemp,
+    int? idpausa,
+  }) async {
+    var client = http.Client();
+    var url = '$_hgapiEndpoint/gestionarestadosubtarea';
+    var uri = Uri.parse(url);
+
+    // Construir request body con campos obligatorios
+    Map<String, dynamic> requestBody = {
+      "iddetalleasignacion": idDetalleAsignacion.toString(),
+      "accion": accion,
+      "timestamp": _formatFecha(timestamp),
+    };
+
+    // Agregar campos opcionales/condicionales
+    if (idmotivo != null) requestBody["idmotivo"] = idmotivo.toString();
+    if (cmotivoOtro != null) requestBody["cmotivoOtro"] = cmotivoOtro;
+    if (cobservaciones != null) requestBody["cobservaciones"] = cobservaciones;
+    if (nminutosemp != null) requestBody["nminutosemp"] = nminutosemp;
+    if (idpausa != null) requestBody["idpausa"] = idpausa.toString();
+
+    String jsonBody = jsonEncode(requestBody);
+
+    try {
+      var response = await client.post(
+        uri,
+        headers: {"Content-Type": "application/json"},
+        body: jsonBody,
+      );
+
+      if (response.statusCode == 200) {
+        print("✅ Acción $accion ejecutada exitosamente (ST)");
+
+        // Parsear respuesta a DTO
+        final jsonResponse =
+            jsonDecode(const Utf8Decoder().convert(response.bodyBytes));
+        return GestionEstadoResponse.fromJson(jsonResponse);
+      } else {
+        print(
+            "❌ Error al gestionar estado ST ($accion): Código ${response.statusCode}");
+        print("Mensaje: ${response.body}");
+        return null;
+      }
+    } catch (e) {
+      print("❌ Excepción al gestionar estado ST ($accion): $e");
+      return null;
+    }
+  }
+
+  /// OBSOLETO: Reemplazado por gestionarEstadoActividadST() con acción PAUSAR.
+  /// Mantenido temporalmente para compatibilidad, pero NO debe usarse en código nuevo.
+  @Deprecated('Usar gestionarEstadoActividadST() con accion PAUSAR')
   /// Registra una nueva pausa para Sub-Tarea (ST - DetalleAsignacion).
   ///
   /// Llama al endpoint /gestionarpausadetalleasignacion para crear un registro de pausa.
@@ -515,6 +602,9 @@ class TrackingApi {
     }
   }
 
+  /// OBSOLETO: Reemplazado por gestionarEstadoActividadST() con acción REANUDAR.
+  /// Mantenido temporalmente para compatibilidad, pero NO debe usarse en código nuevo.
+  @Deprecated('Usar gestionarEstadoActividadST() con accion REANUDAR')
   /// Reanuda una pausa existente para Sub-Tarea (ST - DetalleAsignacion).
   /// 
   /// Llama al endpoint /gestionarpausadetalleasignacion para actualizar el registro de pausa.

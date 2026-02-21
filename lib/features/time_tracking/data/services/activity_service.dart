@@ -128,6 +128,125 @@ class ActivityService {
   }
 
   // ========================================================================
+  // NUEVOS MÉTODOS ST - Endpoint Unificado /gestionarestadosubtarea
+  // ========================================================================
+
+  /// Inicia una Sub-Tarea (ST) en el backend usando endpoint unificado.
+  ///
+  /// NUEVO: Antes las ST no enviaban INICIAR al backend. Ahora los supervisores
+  /// pueden ver en tiempo real cuando un asistente comienza una sub-tarea.
+  ///
+  /// [idDetalleAsignacion] - ID del detalle de asignación
+  /// [timestamp] - Fecha/hora de inicio
+  ///
+  /// Retorna [GestionEstadoResponse] en caso de éxito, null en caso de error.
+  Future<GestionEstadoResponse?> iniciarActividadST({
+    required int idDetalleAsignacion,
+    required DateTime timestamp,
+  }) async {
+    try {
+      final api = TrackingApi();
+      return await api.gestionarEstadoActividadST(
+        idDetalleAsignacion: idDetalleAsignacion,
+        accion: "INICIAR",
+        timestamp: timestamp,
+      );
+    } catch (e) {
+      print("Error al iniciar actividad ST: $e");
+      return null;
+    }
+  }
+
+  /// Pausa una Sub-Tarea (ST) en el backend usando endpoint unificado.
+  ///
+  /// [idDetalleAsignacion] - ID del detalle de asignación
+  /// [idmotivo] - ID del motivo del catálogo (1-8, REQUERIDO)
+  /// [cmotivoOtro] - Descripción libre (solo cuando idmotivo=8, null en otro caso)
+  /// [timestamp] - Fecha/hora de la pausa
+  ///
+  /// Retorna [GestionEstadoResponse] con idpausa en caso de éxito, null en caso de error.
+  Future<GestionEstadoResponse?> pausarActividadST({
+    required int idDetalleAsignacion,
+    required int idmotivo,
+    String? cmotivoOtro,
+    required DateTime timestamp,
+  }) async {
+    try {
+      final api = TrackingApi();
+      return await api.gestionarEstadoActividadST(
+        idDetalleAsignacion: idDetalleAsignacion,
+        accion: "PAUSAR",
+        timestamp: timestamp,
+        idmotivo: idmotivo,
+        cmotivoOtro: cmotivoOtro,
+      );
+    } catch (e) {
+      print("Error al pausar actividad ST: $e");
+      return null;
+    }
+  }
+
+  /// Reanuda una Sub-Tarea (ST) en el backend usando endpoint unificado.
+  ///
+  /// [idDetalleAsignacion] - ID del detalle de asignación
+  /// [timestamp] - Fecha/hora de reanudación
+  ///
+  /// NOTA: A diferencia del endpoint anterior, NO es necesario enviar idpausa.
+  /// El backend busca automáticamente la pausa activa más reciente.
+  ///
+  /// Retorna [GestionEstadoResponse] en caso de éxito, null en caso de error.
+  Future<GestionEstadoResponse?> reanudarActividadST({
+    required int idDetalleAsignacion,
+    required DateTime timestamp,
+  }) async {
+    try {
+      final api = TrackingApi();
+      return await api.gestionarEstadoActividadST(
+        idDetalleAsignacion: idDetalleAsignacion,
+        accion: "REANUDAR",
+        timestamp: timestamp,
+        // NO enviar idpausa - el backend lo maneja automáticamente
+      );
+    } catch (e) {
+      print("Error al reanudar actividad ST: $e");
+      return null;
+    }
+  }
+
+  /// Finaliza una Sub-Tarea (ST) en el backend usando endpoint unificado.
+  ///
+  /// IMPORTANTE: El backend calcula automáticamente el tiempo efectivo trabajado
+  /// como: (tiempo_fin - tiempo_inicio) - suma_pausas
+  ///
+  /// [idDetalleAsignacion] - ID del detalle de asignación
+  /// [timestamp] - Fecha/hora de finalización
+  /// [minutosEmpleado] - OPCIONAL: Total de minutos trabajados (sin contar pausas).
+  ///                     Si se omite, el backend lo calcula automáticamente.
+  /// [observaciones] - Observaciones opcionales del técnico
+  ///
+  /// Retorna [GestionEstadoResponse] en caso de éxito, null en caso de error.
+  Future<GestionEstadoResponse?> finalizarActividadSTNuevo({
+    required int idDetalleAsignacion,
+    required DateTime timestamp,
+    int? minutosEmpleado,
+    String? observaciones,
+  }) async {
+    try {
+      final api = TrackingApi();
+      return await api.gestionarEstadoActividadST(
+        idDetalleAsignacion: idDetalleAsignacion,
+        accion: "FINALIZAR",
+        timestamp: timestamp,
+        nminutosemp: minutosEmpleado?.toString(),
+        cobservaciones: observaciones,
+      );
+    } catch (e) {
+      print("Error al finalizar actividad ST: $e");
+      return null;
+    }
+  }
+
+  // ========================================================================
   // MÉTODOS EXISTENTES (Mantenidos para compatibilidad)
   // ========================================================================
 

@@ -1,6 +1,5 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:hgtrack/core/network/api_client.dart';
 import 'package:hgtrack/features/time_tracking/data/models/pending_sync_activity.dart';
 import 'package:hgtrack/features/time_tracking/data/services/activity_service.dart';
 
@@ -8,8 +7,8 @@ import 'package:hgtrack/features/time_tracking/data/services/activity_service.da
 /// Almacena en SharedPreferences actividades que fallaron al enviarse al backend.
 /// 
 /// Soporta tanto Tareas Principales (TP) como Sub-Tareas (ST):
-/// - TP: usa /updatedetalleordentrabajo
-/// - ST: usa /adddetalleasignacion
+/// - TP: usa /gestionarestadoactividad (endpoint unificado)
+/// - ST: usa /gestionarestadosubtarea (endpoint unificado)
 class PendingSyncService {
   static const String _keyPrefix = 'pending_sync_';
   static const int maxRetries = 5;
@@ -194,22 +193,25 @@ class PendingSyncService {
     return response != null && response.exito;
   }
 
-  /// Sincroniza una Sub-Tarea (ST) usando /adddetalleasignacion
+  /// Sincroniza una Sub-Tarea (ST) usando endpoint unificado
+  /// /gestionarestadosubtarea con acción FINALIZAR
   Future<bool> _syncSubTarea(PendingSyncActivity activity) async {
     if (activity.idAsignacion == null) {
       print('Error: idAsignacion es null para Sub-Tarea ${activity.idActividad}');
       return false;
     }
 
-    final api = TrackingApi();
+    final service = ActivityService();
 
-    return await api.finalizarAsignacion(
-      idAsignacion: activity.idAsignacion!,
-      tiempoInicio: activity.fechaInicio,
-      tiempoFin: activity.fechaFin,
-      minutosEmpleado: activity.minutosTotal,
+    // Usar NUEVO endpoint unificado con acción FINALIZAR
+    // NOTA: No enviamos minutosEmpleado, el backend lo calcula automáticamente
+    final response = await service.finalizarActividadSTNuevo(
+      idDetalleAsignacion: activity.idAsignacion!,
+      timestamp: activity.fechaFin,
       observaciones: activity.observaciones,
     );
+
+    return response != null && response.exito;
   }
 
   /// Intenta sincronizar todas las actividades pendientes
