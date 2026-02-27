@@ -11,7 +11,7 @@ import 'package:hgtrack/features/time_tracking/data/models/gestion_estado_respon
 import 'package:hgtrack/features/time_tracking/data/models/motivo_pausa.dart';
 
 /// Cliente HTTP para comunicacion con el backend HG API.
-/// 
+///
 /// Endpoints disponibles:
 /// - /empleadosactividades - Carga unificada de empleados con actividades (offline-first)
 /// - /updatedetalleordentrabajo - Finalizar actividad
@@ -22,7 +22,7 @@ class TrackingApi {
   /// - Debug mode: URL desde .env (ngrok o localhost)
   static String get _hgapiEndpoint {
     if (kReleaseMode) {
-      return "https://extranetservicio.hagemsa.org/api/services";
+      return "https://apimantenimiento.hagemsa.com:9445/hgapi/api/v1";
     }
     // En modo debug, usar variable de entorno o fallback a localhost
     return dotenv.env['API_BASE_URL'] ?? 'http://localhost:8080/hgapi';
@@ -64,7 +64,7 @@ class TrackingApi {
 
   /// Obtiene todos los empleados de mantenimiento con todas sus actividades
   /// en una sola llamada. Endpoint unificado para carga offline-first.
-  /// 
+  ///
   /// Reemplaza las llamadas separadas a:
   /// - /listarempleadosconactividades
   /// - /consultaractividadesempleado
@@ -169,15 +169,16 @@ class TrackingApi {
   /// OBSOLETO: Reemplazado por gestionarEstadoActividadST() con acción FINALIZAR.
   /// Mantenido temporalmente para compatibilidad, pero NO debe usarse en código nuevo.
   @Deprecated('Usar gestionarEstadoActividadST() con accion FINALIZAR')
+
   /// Finaliza una Sub-Tarea (ST) enviando tiempos al backend.
   /// Usa el endpoint /adddetalleasignacion con el idAsignacion.
-  /// 
+  ///
   /// [idAsignacion] - ID de la asignacion (DetalleAsignacion)
   /// [tiempoInicio] - Fecha/hora de inicio del trabajo
   /// [tiempoFin] - Fecha/hora de fin del trabajo
   /// [minutosEmpleado] - Total de minutos trabajados (calculado por Flutter)
   /// [observaciones] - Observaciones opcionales
-  /// 
+  ///
   /// Retorna true en caso de exito, false en caso de error
   Future<bool> finalizarAsignacion({
     required int idAsignacion,
@@ -207,7 +208,8 @@ class TrackingApi {
       );
 
       if (response.statusCode == 200) {
-        print("Sub-Tarea ST finalizada exitosamente (idAsignacion: $idAsignacion)");
+        print(
+            "Sub-Tarea ST finalizada exitosamente (idAsignacion: $idAsignacion)");
         return true;
       } else {
         print("Error al finalizar Sub-Tarea ST: Codigo ${response.statusCode}");
@@ -221,13 +223,13 @@ class TrackingApi {
   }
 
   /// Marca una actividad como backlog (no completada, para reprogramacion).
-  /// 
+  ///
   /// Envia solo el ID de la actividad y el flag de backlog al backend.
   /// La actividad sera reprogramada en una futura orden de trabajo.
-  /// 
+  ///
   /// [idDetalleOrdenTrabajo] - ID del detalle de orden de trabajo
   /// [observaciones] - Observaciones opcionales (ej: "Falta repuesto X")
-  /// 
+  ///
   /// Retorna el DTO actualizado en caso de exito, null en caso de error
   Future<HgDetalleOrdenTrabajoDto?> marcarActividadComoBacklog({
     required int idDetalleOrdenTrabajo,
@@ -258,7 +260,8 @@ class TrackingApi {
       );
 
       if (response.statusCode == 200) {
-        print("Actividad marcada como backlog exitosamente (ID: $idDetalleOrdenTrabajo)");
+        print(
+            "Actividad marcada como backlog exitosamente (ID: $idDetalleOrdenTrabajo)");
 
         // Parsear respuesta a DTO
         final jsonResponse =
@@ -549,6 +552,7 @@ class TrackingApi {
   /// OBSOLETO: Reemplazado por gestionarEstadoActividadST() con acción PAUSAR.
   /// Mantenido temporalmente para compatibilidad, pero NO debe usarse en código nuevo.
   @Deprecated('Usar gestionarEstadoActividadST() con accion PAUSAR')
+
   /// Registra una nueva pausa para Sub-Tarea (ST - DetalleAsignacion).
   ///
   /// Llama al endpoint /gestionarpausadetalleasignacion para crear un registro de pausa.
@@ -587,7 +591,7 @@ class TrackingApi {
 
       if (response.statusCode == 200) {
         print("Pausa ST registrada exitosamente");
-        
+
         final jsonResponse =
             jsonDecode(const Utf8Decoder().convert(response.bodyBytes));
         return jsonResponse['id'] as int?;
@@ -605,14 +609,15 @@ class TrackingApi {
   /// OBSOLETO: Reemplazado por gestionarEstadoActividadST() con acción REANUDAR.
   /// Mantenido temporalmente para compatibilidad, pero NO debe usarse en código nuevo.
   @Deprecated('Usar gestionarEstadoActividadST() con accion REANUDAR')
+
   /// Reanuda una pausa existente para Sub-Tarea (ST - DetalleAsignacion).
-  /// 
+  ///
   /// Llama al endpoint /gestionarpausadetalleasignacion para actualizar el registro de pausa.
   /// El backend calcula automáticamente los minutos de pausa.
-  /// 
+  ///
   /// [idPausa] - ID de la pausa retornado al crearla
   /// [tiempoFin] - Timestamp de fin de pausa
-  /// 
+  ///
   /// Retorna true en caso de éxito, false en caso de error
   Future<bool> reanudarPausaST({
     required int idPausa,
