@@ -592,12 +592,12 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
   Future<void> _onFinalizar() async {
     if (_trackingState == null) return;
 
-    // Validar tiempo mínimo de 5 minutos
+    // Validar tiempo mínimo de 3 minutos
     final tiempoTotal = _trackingState!.tiempoTotalTrabajado;
-    if (tiempoTotal.inMinutes < 5) {
+    if (tiempoTotal.inMinutes < 3) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Debe trabajar al menos 5 minutos antes de finalizar'),
+          content: Text('Debe trabajar al menos 3 minutos antes de finalizar'),
           backgroundColor: AppColors.error,
         ),
       );
@@ -1331,9 +1331,9 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
 
   /// Botones de acción según el estado
   Widget _buildBotonesAccion(EstadoActividad estado) {
-    // Calcular si tiene más de 5 minutos trabajados
+    // Calcular si tiene más de 3 minutos trabajados
     final tiempoTotal = _trackingState?.tiempoTotalTrabajado ?? Duration.zero;
-    final tieneMasDe5Minutos = tiempoTotal.inMinutes >= 5;
+    final tieneMasDe3Minutos = tiempoTotal.inMinutes >= 3;
 
     switch (estado) {
       case EstadoActividad.noIniciada:
@@ -1396,9 +1396,9 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
               ),
             ),
             const SizedBox(width: 12),
-            // Botón Cancelar (< 5 min) o Finalizar (>= 5 min)
+            // Botón Cancelar (< 3 min) o Finalizar (>= 3 min)
             Expanded(
-              child: tieneMasDe5Minutos
+              child: tieneMasDe3Minutos
                   ? ElevatedButton.icon(
                       onPressed: _onFinalizar,
                       icon: const Icon(Icons.stop),
@@ -1440,7 +1440,7 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
             ),
             const SizedBox(width: 12),
             // En estado pausado siempre mostrar Finalizar
-            // (solo se puede pausar después de 5 min, por lo tanto siempre se puede finalizar)
+            // (solo se puede pausar después de 3 min, por lo tanto siempre se puede finalizar)
             Expanded(
               child: ElevatedButton.icon(
                 onPressed: _onFinalizar,

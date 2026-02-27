@@ -167,7 +167,7 @@ class ActividadTrackingState {
     );
   }
 
-  /// Cancela la actividad (solo si tiene menos de 5 minutos trabajados)
+  /// Cancela la actividad (solo si tiene menos de 3 minutos trabajados)
   /// Descarta todo el progreso y vuelve a estado inicial
   ActividadTrackingState cancelar() {
     if (estado != EstadoActividad.enProceso &&
@@ -176,11 +176,11 @@ class ActividadTrackingState {
           'Solo se puede cancelar una actividad en proceso o pausada');
     }
 
-    // Validar que tenga menos de 5 minutos
+    // Validar que tenga menos de 3 minutos
     final tiempoTotal = tiempoTotalTrabajado;
-    if (tiempoTotal.inMinutes >= 5) {
+    if (tiempoTotal.inMinutes >= 3) {
       throw StateError(
-          'No se puede cancelar una actividad con 5 o más minutos trabajados');
+          'No se puede cancelar una actividad con 3 o más minutos trabajados');
     }
 
     // Volver al estado inicial (sin periodos)
