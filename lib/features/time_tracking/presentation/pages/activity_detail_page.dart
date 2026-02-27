@@ -592,6 +592,47 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
   Future<void> _onFinalizar() async {
     if (_trackingState == null) return;
 
+    // Validar que la actividad no esté pausada
+    if (_trackingState!.estado == EstadoActividad.pausada) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          icon: const Icon(
+            Icons.warning_amber_rounded,
+            color: AppColors.warning,
+            size: 48,
+          ),
+          title: const Text(
+            'Actividad Pausada',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 20,
+            ),
+          ),
+          content: const Text(
+            'No puedes finalizar una actividad pausada. Por favor, reanuda primero.',
+            style: TextStyle(fontSize: 16),
+            textAlign: TextAlign.center,
+          ),
+          actionsAlignment: MainAxisAlignment.center,
+          actions: [
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+              ),
+              child: const Text(
+                'Entendido',
+                style: TextStyle(color: Colors.white, fontSize: 16),
+              ),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     // Validar tiempo mínimo de 3 minutos
     final tiempoTotal = _trackingState!.tiempoTotalTrabajado;
     if (tiempoTotal.inMinutes < 3) {
