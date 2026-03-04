@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
 
@@ -9,8 +10,10 @@ Future<void> main() async {
   // Asegurar que Flutter esté inicializado antes de cargar configuración
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Cargar variables de entorno desde archivo .env
-  await dotenv.load(fileName: ".env");
+  // Cargar variables de entorno solo en modo debug
+  if (!kReleaseMode) {
+    await dotenv.load(fileName: ".env");
+  }
   
   runApp(const MainApp());
 }
