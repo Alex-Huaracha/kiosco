@@ -26,7 +26,7 @@ class MainApp extends StatelessWidget {
      return ChangeNotifierProvider(
       create: (context) => MyAppState(),
        child: MaterialApp(
-        title: 'HG Control Tiempo OT',
+        title: 'Kiosco',
         theme: ThemeData(
           useMaterial3: true,
           colorScheme: ColorScheme.fromSeed(
