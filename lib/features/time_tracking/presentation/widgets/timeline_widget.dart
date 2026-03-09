@@ -243,7 +243,7 @@ class _TimelineItem extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  _formatearHora(periodo.inicio),
+                  _formatearFechaHora(periodo.inicio),
                   style: const TextStyle(
                     fontSize: 14,
                     color: AppColors.textSecondary,
@@ -303,13 +303,20 @@ class _TimelineItem extends StatelessWidget {
     );
   }
 
-  String _formatearHora(DateTime fecha) {
+  String _formatearFechaHora(DateTime fecha) {
+    // Fecha: DD/MM/YYYY
+    final dia = fecha.day.toString().padLeft(2, '0');
+    final mes = fecha.month.toString().padLeft(2, '0');
+    final anio = fecha.year;
+
+    // Hora: HH:MM:SS AM/PM
     final hora = fecha.hour;
     final minuto = fecha.minute.toString().padLeft(2, '0');
     final segundo = fecha.second.toString().padLeft(2, '0');
     final periodo = hora >= 12 ? 'PM' : 'AM';
     final hora12 = hora > 12 ? hora - 12 : (hora == 0 ? 12 : hora);
-    return '${hora12.toString().padLeft(2, '0')}:$minuto:$segundo $periodo';
+
+    return '$dia/$mes/$anio ${hora12.toString().padLeft(2, '0')}:$minuto:$segundo $periodo';
   }
 
   String _formatearDuracion(Duration duracion) {
