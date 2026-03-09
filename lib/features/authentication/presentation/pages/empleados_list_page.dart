@@ -22,6 +22,9 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
   bool isLoading = true;
   String? errorMessage;
 
+  // Filtro por cargo
+  String? _cargoSeleccionado; // null = "Todos"
+
   // Conectividad
   bool _isOnline = true;
   StreamSubscription<bool>? _connectivitySubscription;
@@ -108,6 +111,38 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
     }
   }
 
+  /// Lista de cargos únicos con su contador de empleados, ordenados alfabéticamente
+  List<({String cargo, int count})> get _cargosDisponibles {
+    if (_empleadosConActividades == null || _empleadosConActividades!.isEmpty) {
+      return [];
+    }
+
+    // Agrupar empleados por cargo
+    final cargoCount = <String, int>{};
+    for (final item in _empleadosConActividades!) {
+      final cargo = item.empleado.cargo ?? 'Sin cargo';
+      cargoCount[cargo] = (cargoCount[cargo] ?? 0) + 1;
+    }
+
+    // Convertir a lista de records y ordenar alfabéticamente
+    final result = cargoCount.entries
+        .map((e) => (cargo: e.key, count: e.value))
+        .toList()
+      ..sort((a, b) => a.cargo.toLowerCase().compareTo(b.cargo.toLowerCase()));
+
+    return result;
+  }
+
+  /// Lista de empleados filtrados por cargo seleccionado
+  List<EmpleadoConActividades> get _empleadosFiltrados {
+    if (_empleadosConActividades == null) return [];
+    if (_cargoSeleccionado == null) return _empleadosConActividades!;
+
+    return _empleadosConActividades!
+        .where((item) => (item.empleado.cargo ?? 'Sin cargo') == _cargoSeleccionado)
+        .toList();
+  }
+
   int _calculateCrossAxisCount(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
     return width < 900 ? 2 : 3;
@@ -139,7 +174,9 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
 
           const SizedBox(height: 16),
           _buildBanner(),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
+          _buildCargoDropdown(),
+          const SizedBox(height: 12),
           Expanded(
             child: _buildBody(),
           ),
@@ -167,6 +204,117 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
               fontWeight: FontWeight.w500,
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  /// Dropdown para filtrar por cargo
+  Widget _buildCargoDropdown() {
+    final cargos = _cargosDisponibles;
+    final totalEmpleados = _empleadosConActividades?.length ?? 0;
+
+    // No mostrar dropdown si no hay datos o solo hay un cargo
+    if (cargos.isEmpty || cargos.length == 1) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.filter_list,
+            color: AppColors.textSecondary,
+            size: 20,
+          ),
+          const SizedBox(width: 8),
+          const Text(
+            'Filtrar por cargo:',
+            style: TextStyle(
+              fontSize: 15,
+              color: AppColors.textSecondary,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: AppColors.cardBackground,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: AppColors.primary.withAlpha(77),
+                  width: 1,
+                ),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String?>(
+                  value: _cargoSeleccionado,
+                  isExpanded: true,
+                  icon: const Icon(Icons.arrow_drop_down, color: AppColors.primary),
+                  style: const TextStyle(
+                    fontSize: 15,
+                    color: AppColors.textPrimary,
+                  ),
+                  hint: Text(
+                    'Todos ($totalEmpleados)',
+                    style: const TextStyle(
+                      fontSize: 15,
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  items: [
+                    // Opcion "Todos"
+                    DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text(
+                        'Todos ($totalEmpleados)',
+                        style: const TextStyle(fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                    // Separador
+                    const DropdownMenuItem<String?>(
+                      enabled: false,
+                      child: Divider(height: 1),
+                    ),
+                    // Cargos disponibles
+                    ...cargos.map((item) => DropdownMenuItem<String?>(
+                          value: item.cargo,
+                          child: Text('${item.cargo} (${item.count})'),
+                        )),
+                  ],
+                  onChanged: (value) {
+                    setState(() {
+                      _cargoSeleccionado = value;
+                    });
+                  },
+                ),
+              ),
+            ),
+          ),
+          // Boton para limpiar filtro (solo visible si hay filtro activo)
+          if (_cargoSeleccionado != null) ...[
+            const SizedBox(width: 8),
+            IconButton(
+              onPressed: () {
+                setState(() {
+                  _cargoSeleccionado = null;
+                });
+              },
+              icon: const Icon(Icons.clear, color: AppColors.textSecondary),
+              tooltip: 'Limpiar filtro',
+              style: IconButton.styleFrom(
+                backgroundColor: AppColors.cardBackground,
+                side: BorderSide(
+                  color: AppColors.textSecondary.withAlpha(77),
+                  width: 1,
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -217,7 +365,7 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
-                '${_empleadosConActividades!.length}',
+                '${_empleadosFiltrados.length}',
                 style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.bold,
@@ -307,6 +455,47 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
       );
     }
 
+    // Obtener lista filtrada
+    final empleadosFiltrados = _empleadosFiltrados;
+
+    // Estado vacío cuando el filtro no tiene resultados
+    if (empleadosFiltrados.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                Icons.search_off,
+                size: 72,
+                color: AppColors.textSecondary,
+              ),
+              const SizedBox(height: 24),
+              Text(
+                'No hay empleados con el cargo "$_cargoSeleccionado"',
+                style: const TextStyle(
+                  fontSize: 18,
+                  color: AppColors.textSecondary,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              TextButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _cargoSeleccionado = null;
+                  });
+                },
+                icon: const Icon(Icons.clear),
+                label: const Text('Limpiar filtro'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     // GridView adaptativo con las cards de empleados
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -318,9 +507,9 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
             mainAxisSpacing: 16,
             childAspectRatio: _calculateAspectRatio(context),
           ),
-          itemCount: _empleadosConActividades!.length,
+          itemCount: empleadosFiltrados.length,
           itemBuilder: (context, index) {
-            final item = _empleadosConActividades![index];
+            final item = empleadosFiltrados[index];
             return EmpleadoCard(
               empleadoConActividades: item,
               onTap: () => _onEmpleadoSelected(item),
