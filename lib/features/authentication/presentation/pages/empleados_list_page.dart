@@ -732,18 +732,7 @@ class EmpleadoCard extends StatelessWidget {
                           ),
                         ),
 
-                        const SizedBox(height: 4),
-
-                        // DNI
-                        Text(
-                          'DNI: ${empleado.numerodocumento ?? "N/A"}',
-                          style: const TextStyle(
-                            fontSize: 15,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-
-                        const SizedBox(height: 2),
+                        const SizedBox(height: 8),
 
                         // Cargo
                         Text(
