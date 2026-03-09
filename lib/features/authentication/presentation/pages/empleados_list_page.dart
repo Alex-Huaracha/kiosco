@@ -275,11 +275,6 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
                         style: const TextStyle(fontWeight: FontWeight.w500),
                       ),
                     ),
-                    // Separador
-                    const DropdownMenuItem<String?>(
-                      enabled: false,
-                      child: Divider(height: 1),
-                    ),
                     // Cargos disponibles
                     ...cargos.map((item) => DropdownMenuItem<String?>(
                           value: item.cargo,
