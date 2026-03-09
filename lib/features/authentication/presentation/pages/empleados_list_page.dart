@@ -25,6 +25,10 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
   // Filtro por cargo
   String? _cargoSeleccionado; // null = "Todos"
 
+  // Búsqueda por nombre/DNI
+  String _searchQuery = '';
+  final TextEditingController _searchController = TextEditingController();
+
   // Conectividad
   bool _isOnline = true;
   StreamSubscription<bool>? _connectivitySubscription;
@@ -38,6 +42,7 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
 
   @override
   void dispose() {
+    _searchController.dispose();
     _connectivitySubscription?.cancel();
     super.dispose();
   }
@@ -133,9 +138,23 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
     return result;
   }
 
-  /// Lista de empleados filtrados por cargo seleccionado
+  /// Lista de empleados filtrados por búsqueda o cargo
+  /// - Si hay búsqueda activa: filtra por nombre O DNI (ignora cargo)
+  /// - Si no hay búsqueda: filtra por cargo seleccionado
   List<EmpleadoConActividades> get _empleadosFiltrados {
     if (_empleadosConActividades == null) return [];
+
+    // Si hay búsqueda activa, filtrar por nombre o DNI (ignorar cargo)
+    if (_searchQuery.isNotEmpty) {
+      final query = _searchQuery.toLowerCase().trim();
+      return _empleadosConActividades!.where((item) {
+        final nombre = item.empleado.nombreCompleto.toLowerCase();
+        final dni = item.empleado.numerodocumento?.toLowerCase() ?? '';
+        return nombre.contains(query) || dni.contains(query);
+      }).toList();
+    }
+
+    // Sin búsqueda, aplicar filtro de cargo
     if (_cargoSeleccionado == null) return _empleadosConActividades!;
 
     return _empleadosConActividades!
@@ -175,6 +194,8 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
           const SizedBox(height: 16),
           _buildBanner(),
           const SizedBox(height: 12),
+          _buildSearchBar(),
+          const SizedBox(height: 12),
           _buildCargoDropdown(),
           const SizedBox(height: 12),
           Expanded(
@@ -209,10 +230,77 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
     );
   }
 
+  /// SearchBar para buscar por nombre o DNI
+  Widget _buildSearchBar() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: TextField(
+        controller: _searchController,
+        decoration: InputDecoration(
+          hintText: 'Buscar por nombre o DNI...',
+          hintStyle: const TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 15,
+          ),
+          prefixIcon: const Icon(
+            Icons.search,
+            color: AppColors.textSecondary,
+          ),
+          suffixIcon: _searchQuery.isNotEmpty
+              ? IconButton(
+                  onPressed: () {
+                    setState(() {
+                      _searchController.clear();
+                      _searchQuery = '';
+                    });
+                  },
+                  icon: const Icon(Icons.clear, color: AppColors.textSecondary),
+                  tooltip: 'Limpiar búsqueda',
+                )
+              : null,
+          filled: true,
+          fillColor: AppColors.cardBackground,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(
+              color: AppColors.primary.withAlpha(77),
+              width: 1,
+            ),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(
+              color: AppColors.primary.withAlpha(77),
+              width: 1,
+            ),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(
+              color: AppColors.primary,
+              width: 2,
+            ),
+          ),
+        ),
+        style: const TextStyle(
+          fontSize: 15,
+          color: AppColors.textPrimary,
+        ),
+        onChanged: (value) {
+          setState(() {
+            _searchQuery = value;
+          });
+        },
+      ),
+    );
+  }
+
   /// Dropdown para filtrar por cargo
   Widget _buildCargoDropdown() {
     final cargos = _cargosDisponibles;
     final totalEmpleados = _empleadosConActividades?.length ?? 0;
+    final isSearchActive = _searchQuery.isNotEmpty;
 
     // No mostrar dropdown si no hay datos o solo hay un cargo
     if (cargos.isEmpty || cargos.length == 1) {
@@ -221,93 +309,130 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(
-            Icons.filter_list,
-            color: AppColors.textSecondary,
-            size: 20,
-          ),
-          const SizedBox(width: 8),
-          const Text(
-            'Filtrar por cargo:',
-            style: TextStyle(
-              fontSize: 15,
-              color: AppColors.textSecondary,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              decoration: BoxDecoration(
-                color: AppColors.cardBackground,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: AppColors.primary.withAlpha(77),
-                  width: 1,
-                ),
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String?>(
-                  value: _cargoSeleccionado,
-                  isExpanded: true,
-                  icon: const Icon(Icons.arrow_drop_down, color: AppColors.primary),
-                  style: const TextStyle(
-                    fontSize: 15,
-                    color: AppColors.textPrimary,
+          // Fila del dropdown
+          Opacity(
+            opacity: isSearchActive ? 0.5 : 1.0,
+            child: IgnorePointer(
+              ignoring: isSearchActive,
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.filter_list,
+                    color: isSearchActive ? AppColors.textSecondary.withAlpha(128) : AppColors.textSecondary,
+                    size: 20,
                   ),
-                  hint: Text(
-                    'Todos ($totalEmpleados)',
-                    style: const TextStyle(
+                  const SizedBox(width: 8),
+                  Text(
+                    'Filtrar por cargo:',
+                    style: TextStyle(
                       fontSize: 15,
-                      color: AppColors.textPrimary,
+                      color: isSearchActive ? AppColors.textSecondary.withAlpha(128) : AppColors.textSecondary,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
-                  items: [
-                    // Opcion "Todos"
-                    DropdownMenuItem<String?>(
-                      value: null,
-                      child: Text(
-                        'Todos ($totalEmpleados)',
-                        style: const TextStyle(fontWeight: FontWeight.w500),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: isSearchActive ? AppColors.cardBackground.withAlpha(128) : AppColors.cardBackground,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: AppColors.primary.withAlpha(isSearchActive ? 38 : 77),
+                          width: 1,
+                        ),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String?>(
+                          value: _cargoSeleccionado,
+                          isExpanded: true,
+                          icon: Icon(
+                            Icons.arrow_drop_down,
+                            color: isSearchActive ? AppColors.primary.withAlpha(128) : AppColors.primary,
+                          ),
+                          style: TextStyle(
+                            fontSize: 15,
+                            color: isSearchActive ? AppColors.textPrimary.withAlpha(128) : AppColors.textPrimary,
+                          ),
+                          hint: Text(
+                            'Todos ($totalEmpleados)',
+                            style: TextStyle(
+                              fontSize: 15,
+                              color: isSearchActive ? AppColors.textPrimary.withAlpha(128) : AppColors.textPrimary,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          items: [
+                            // Opcion "Todos"
+                            DropdownMenuItem<String?>(
+                              value: null,
+                              child: Text(
+                                'Todos ($totalEmpleados)',
+                                style: const TextStyle(fontWeight: FontWeight.w500),
+                              ),
+                            ),
+                            // Cargos disponibles
+                            ...cargos.map((item) => DropdownMenuItem<String?>(
+                                  value: item.cargo,
+                                  child: Text('${item.cargo} (${item.count})'),
+                                )),
+                          ],
+                          onChanged: (value) {
+                            setState(() {
+                              _cargoSeleccionado = value;
+                            });
+                          },
+                        ),
                       ),
                     ),
-                    // Cargos disponibles
-                    ...cargos.map((item) => DropdownMenuItem<String?>(
-                          value: item.cargo,
-                          child: Text('${item.cargo} (${item.count})'),
-                        )),
+                  ),
+                  // Boton para limpiar filtro (solo visible si hay filtro activo y no hay búsqueda)
+                  if (_cargoSeleccionado != null && !isSearchActive) ...[
+                    const SizedBox(width: 8),
+                    IconButton(
+                      onPressed: () {
+                        setState(() {
+                          _cargoSeleccionado = null;
+                        });
+                      },
+                      icon: const Icon(Icons.clear, color: AppColors.textSecondary),
+                      tooltip: 'Limpiar filtro',
+                      style: IconButton.styleFrom(
+                        backgroundColor: AppColors.cardBackground,
+                        side: BorderSide(
+                          color: AppColors.textSecondary.withAlpha(77),
+                          width: 1,
+                        ),
+                      ),
+                    ),
                   ],
-                  onChanged: (value) {
-                    setState(() {
-                      _cargoSeleccionado = value;
-                    });
-                  },
-                ),
+                ],
               ),
             ),
           ),
-          // Boton para limpiar filtro (solo visible si hay filtro activo)
-          if (_cargoSeleccionado != null) ...[
-            const SizedBox(width: 8),
-            IconButton(
-              onPressed: () {
-                setState(() {
-                  _cargoSeleccionado = null;
-                });
-              },
-              icon: const Icon(Icons.clear, color: AppColors.textSecondary),
-              tooltip: 'Limpiar filtro',
-              style: IconButton.styleFrom(
-                backgroundColor: AppColors.cardBackground,
-                side: BorderSide(
-                  color: AppColors.textSecondary.withAlpha(77),
-                  width: 1,
+          // Mensaje informativo cuando hay búsqueda activa
+          if (isSearchActive) ...[
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  size: 14,
+                  color: AppColors.textSecondary.withAlpha(179),
                 ),
-              ),
+                const SizedBox(width: 4),
+                Text(
+                  'Limpie la búsqueda para filtrar por cargo',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary.withAlpha(179),
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
             ),
           ],
         ],
@@ -455,6 +580,12 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
 
     // Estado vacío cuando el filtro no tiene resultados
     if (empleadosFiltrados.isEmpty) {
+      // Determinar si es por búsqueda o por filtro de cargo
+      final isSearchActive = _searchQuery.isNotEmpty;
+      final message = isSearchActive
+          ? 'No se encontró empleado con "$_searchQuery"'
+          : 'No hay empleados con el cargo "$_cargoSeleccionado"';
+
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -468,7 +599,7 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
               ),
               const SizedBox(height: 24),
               Text(
-                'No hay empleados con el cargo "$_cargoSeleccionado"',
+                message,
                 style: const TextStyle(
                   fontSize: 18,
                   color: AppColors.textSecondary,
@@ -479,11 +610,16 @@ class _EmpleadosListPageState extends State<EmpleadosListPage> {
               TextButton.icon(
                 onPressed: () {
                   setState(() {
-                    _cargoSeleccionado = null;
+                    if (isSearchActive) {
+                      _searchController.clear();
+                      _searchQuery = '';
+                    } else {
+                      _cargoSeleccionado = null;
+                    }
                   });
                 },
                 icon: const Icon(Icons.clear),
-                label: const Text('Limpiar filtro'),
+                label: Text(isSearchActive ? 'Limpiar búsqueda' : 'Limpiar filtro'),
               ),
             ],
           ),
